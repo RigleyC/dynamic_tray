@@ -104,9 +104,10 @@ changes combine crossfade, a subtle scale, and horizontal movement, all derived
 from the same `pageProgress`. Route entry/exit and its backdrop use the route
 animation; backdrop opacity also retargets with the effects motion during
 fullscreen morphs and follows interactive drag distance. The default
-`TrayMotionTheme.family()` defines distinct Motor profiles for route,
-geometry, effects, and interactive settling. Opening and dismissal use the
-same route profile in opposite directions. Keyboard-driven changes follow
+`TrayMotionTheme.family()` defines distinct Motor profiles for opening,
+closing, geometry, effects, and interactive settling. Closing uses a 340 ms
+curve, while opening uses a spring. Surface travel, scale, content opacity,
+and backdrop opacity derive from route progress. Keyboard-driven changes follow
 the OS-reported inset directly, without a second spring. The transition
 keeps the same container-transform vocabulary as Flutter's `OpenContainer`,
 with a fading barrier, changing corner radius, and surface elevation. Fullscreen

@@ -4,13 +4,20 @@ import 'package:motor/motor.dart';
 class TrayMotionTheme {
   const TrayMotionTheme({
     required this.route,
+    this.close = const CurvedMotion(
+      Duration(milliseconds: 340),
+      Cubic(0.55, 0, 1, 0.45),
+    ),
     required this.geometry,
     required this.effects,
     required this.interactive,
   });
 
-  /// Motor motion for both route entry and route exit.
+  /// Motor motion for route entry.
   final Motion route;
+
+  /// Motor motion for route exit.
+  final Motion close;
 
   /// Motor motion for changes to the tray's bounds and corner radius.
   final Motion geometry;
@@ -25,6 +32,10 @@ class TrayMotionTheme {
     return TrayMotionTheme(
       route: const SpringMotion(
         SpringDescription(mass: 1, stiffness: 240, damping: 26),
+      ),
+      close: const CurvedMotion(
+        Duration(milliseconds: 340),
+        Cubic(0.55, 0, 1, 0.45),
       ),
       geometry: const SpringMotion(
         SpringDescription(mass: 0.6, stiffness: 185, damping: 15),

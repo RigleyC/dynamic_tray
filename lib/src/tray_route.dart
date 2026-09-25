@@ -93,7 +93,7 @@ class TrayRoute<T> extends PopupRoute<T> {
   @override
   Simulation? createSimulation({required bool forward}) {
     if (!forward) {
-      return motionTheme.route.createSimulation(
+      return motionTheme.close.createSimulation(
         start: controller?.value ?? 1,
         end: 0,
         velocity: controller?.velocity ?? 0,

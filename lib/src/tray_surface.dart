@@ -621,7 +621,15 @@ class _TraySurfaceState extends State<TraySurface>
                                           child: Stack(
                                             fit: StackFit.expand,
                                             children: [
-                                              content,
+                                              Positioned.fill(
+                                                child: Opacity(
+                                                  opacity:
+                                                      visualState.routeProgress,
+                                                  child: Stack(
+                                                    children: [content],
+                                                  ),
+                                                ),
+                                              ),
                                               Positioned(
                                                 left: 0,
                                                 right: 0,
@@ -889,11 +897,9 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
         final visual = _motion.value;
         final routeProgress =
             widget.routeAnimation.value.clamp(0.0, 1.0).toDouble();
-        final travel =
-            widget.viewportSize.height > 1000
-                ? widget.viewportSize.height
-                : 1000.0;
+        const travel = 1000.0;
         final dragOffset = widget.dragMotion.value;
+        final dragProgress = (dragOffset.dy / travel).clamp(0.0, 1.0);
         final projectedRect = visual.geometry.rect.shift(
           Offset(0, travel * (1 - routeProgress)),
         );
@@ -909,11 +915,7 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
           backdropOpacity:
               (routeProgress *
                       visual.backdropFactor.clamp(0.0, 1.0) *
-                      (1 -
-                          (dragOffset.dy / widget.viewportSize.height).clamp(
-                            0.0,
-                            1.0,
-                          )))
+                      (1 - 0.6 * dragProgress))
                   .clamp(0.0, 1.0)
                   .toDouble(),
         );
