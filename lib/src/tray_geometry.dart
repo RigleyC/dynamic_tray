@@ -90,8 +90,8 @@ abstract interface class TrayGeometryResolver {
 
 class DefaultTrayGeometryResolver implements TrayGeometryResolver {
   const DefaultTrayGeometryResolver({
-    this.horizontalMargin = 16,
-    this.bottomMargin = 16,
+    this.horizontalMargin = 8,
+    this.bottomMargin = 8,
     this.expandedFraction = 0.72,
     this.fullscreenRadius = 0,
     this.contentRadius = 28,
@@ -113,10 +113,11 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
     final safeTop = context.padding.top;
     final bottomInset =
         viewInsets.bottom > 0 ? viewInsets.bottom : context.padding.bottom;
-    final availableHeight = (context.size.height - safeTop - bottomInset).clamp(
-      0.0,
-      context.size.height,
-    );
+    final availableHeight =
+        (context.size.height - safeTop - bottomInset - bottomMargin).clamp(
+          0.0,
+          context.size.height,
+        );
     final width = (context.size.width - horizontalMargin * 2).clamp(
       0.0,
       context.size.width,

@@ -17,7 +17,7 @@ void main() {
       const Size(320, 240),
     );
 
-    expect(geometry.rect, const Rect.fromLTWH(16, 524, 368, 240));
+    expect(geometry.rect, const Rect.fromLTWH(8, 532, 384, 240));
     expect(geometry.borderRadius, BorderRadius.circular(28));
   });
 
@@ -28,8 +28,8 @@ void main() {
       const Size(320, 100),
     );
 
-    expect(geometry.rect.height, closeTo(544.32, 0.001));
-    expect(geometry.rect.bottom, 764);
+    expect(geometry.rect.height, closeTo(538.56, 0.001));
+    expect(geometry.rect.bottom, 772);
   });
 
   test('fullscreen geometry occupies the whole route', () {
@@ -50,7 +50,7 @@ void main() {
       const Size(320, 900),
     );
 
-    expect(geometry.rect.height, 756);
+    expect(geometry.rect.height, 748);
   });
 
   test('geometry motion converter preserves bounds and radius', () {

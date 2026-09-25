@@ -129,6 +129,12 @@ viewport stable while their own scrollable loads content.
 Inactive pages remain mounted for state preservation but do not overwrite the
 active page's content measurement; switching pages reports the new size again.
 
+The default non-fullscreen geometry leaves 8 logical pixels on the left, right,
+and bottom. Its maximum height reserves both the top safe area and that bottom
+margin. The bottom system safe-area inset is preserved, or the keyboard inset
+when the keyboard is open. Fullscreen geometry remains edge-to-edge, with its
+height shortened only by the keyboard when present.
+
 For state restoration, use a stable page ID and codec-compatible arguments,
 provide a page restorer to the controller, and insert the route with Flutter's
 `Navigator.restorablePush`:

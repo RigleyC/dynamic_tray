@@ -16,6 +16,10 @@ driven by `motor`.
   not stored as page configuration.
 - `DefaultTrayGeometryResolver` maps content, expanded, and fullscreen states
   to bounds and border radius.
+- Non-fullscreen trays default to 8 logical pixels of left, right, and bottom
+  margin. Their maximum height reserves the top safe area, the bottom system
+  inset (or keyboard inset), and the bottom margin. Fullscreen remains
+  edge-to-edge, shortened only for an open keyboard.
 - `TraySurface` is the only initial renderer and uses `MotionBuilder<TrayGeometry>`
   with a package-owned converter so bounds and corner radius share one Motor
   target.
