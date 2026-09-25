@@ -99,15 +99,15 @@ Place the same tag on the destination page. If either page does not declare a
 matching tag, the normal page transition is used. The flight is visual-only;
 state and pointer ownership remain in the page widgets.
 
-The surface uses `motor` for geometry, page effects, and drag settling. Page
+The surface uses `motor` for route entry/exit, geometry, page effects, and drag settling. Page
 changes combine crossfade, a subtle scale, and horizontal movement, all derived
 from the same `pageProgress`. Route entry/exit and its backdrop use the route
-animation; backdrop opacity also retargets with the geometry spring during
+animation; backdrop opacity also retargets with the effects motion during
 fullscreen morphs and follows interactive drag distance. The default
-`TrayMotionTheme.family()` uses one 300ms smooth spring for every
-surface-size change, including route opening/dismissal, expansion/collapse, and
-fullscreen morphing. Content effects use a separate 180ms motion, while drag
-settling remains independently configurable for responsiveness. The transition
+`TrayMotionTheme.family()` defines distinct Motor profiles for route,
+geometry, effects, and interactive settling. Opening and dismissal use the
+same route profile in opposite directions. Keyboard-driven changes follow
+the OS-reported inset directly, without a second spring. The transition
 keeps the same container-transform vocabulary as Flutter's `OpenContainer`,
 with a fading barrier, changing corner radius, and surface elevation. Fullscreen
 is still the same tray surface, so it transforms in place instead of pushing a

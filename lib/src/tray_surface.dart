@@ -521,6 +521,7 @@ class _TraySurfaceState extends State<TraySurface>
                       routeAnimation: widget.routeAnimation,
                       dragMotion: _dragMotion,
                       viewportSize: layoutContext.size,
+                      keyboardInset: mediaQuery.viewInsets.bottom,
                       geometryResolver: widget.geometryResolver,
                       active:
                           widget.controller.lifecycle != TrayLifecycle.opening,
@@ -716,6 +717,7 @@ class _TrayVisualMotionBuilder extends StatefulWidget {
     required this.routeAnimation,
     required this.dragMotion,
     required this.viewportSize,
+    required this.keyboardInset,
     required this.geometryResolver,
     required this.active,
     required this.onTransitionSettled,
@@ -731,6 +733,7 @@ class _TrayVisualMotionBuilder extends StatefulWidget {
   final Animation<double> routeAnimation;
   final MotionController<Offset> dragMotion;
   final Size viewportSize;
+  final double keyboardInset;
   final TrayGeometryResolver geometryResolver;
   final bool active;
   final ValueChanged<int> onTransitionSettled;
@@ -764,7 +767,7 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
     for (var i = 0; i < 12; i++) widget.geometryMotion,
     widget.effectsMotion,
     widget.effectsMotion,
-    widget.geometryMotion,
+    widget.effectsMotion,
   ];
 
   @override
@@ -787,12 +790,19 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
     final target = _targetFor(widget);
     final geometryChanged = oldWidget.geometry != widget.geometry;
     final backdropChanged = oldWidget.presentation != widget.presentation;
+    final keyboardChanged = oldWidget.keyboardInset != widget.keyboardInset;
     final transitionChanged = oldWidget.transition?.id != widget.transition?.id;
     _transitionId = widget.transition?.id;
 
     if (!widget.active) {
       _motion.value = target;
       return;
+    }
+    if (keyboardChanged) {
+      // The OS already animates viewInsets. Following each reported inset
+      // directly avoids adding a second spring behind the keyboard.
+      _motion.value = _motion.value.copyWith(geometry: target.geometry);
+      if (!transitionChanged && !backdropChanged) return;
     }
     if (widget.transition == null &&
         transitionChanged &&
@@ -950,9 +960,13 @@ class _TrayVisualState {
   final double contentOpacity;
   final double backdropFactor;
 
-  _TrayVisualState copyWith({double? pageProgress, double? contentOpacity}) {
+  _TrayVisualState copyWith({
+    TrayGeometry? geometry,
+    double? pageProgress,
+    double? contentOpacity,
+  }) {
     return _TrayVisualState(
-      geometry: geometry,
+      geometry: geometry ?? this.geometry,
       pageProgress: pageProgress ?? this.pageProgress,
       contentOpacity: contentOpacity ?? this.contentOpacity,
       backdropFactor: backdropFactor,

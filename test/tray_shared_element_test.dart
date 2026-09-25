@@ -34,6 +34,7 @@ void main() {
                     context: context,
                     page: TrayPage(builder: (_) => const _SharedRootPage()),
                     motionTheme: TrayMotionTheme(
+                      route: Motion.none(),
                       geometry: Motion.none(),
                       effects: Motion.linear(const Duration(seconds: 1)),
                       interactive: Motion.none(),
@@ -79,6 +80,7 @@ void main() {
                       builder: (_) => const _SharedRootPage(matching: false),
                     ),
                     motionTheme: TrayMotionTheme(
+                      route: Motion.none(),
                       geometry: Motion.none(),
                       effects: Motion.linear(const Duration(seconds: 1)),
                       interactive: Motion.none(),
@@ -123,6 +125,7 @@ void main() {
                           (_) => const _SharedRootPage(dismissAfterPop: false),
                     ),
                     motionTheme: TrayMotionTheme(
+                      route: Motion.none(),
                       geometry: Motion.none(),
                       effects: Motion.linear(const Duration(seconds: 1)),
                       interactive: Motion.none(),

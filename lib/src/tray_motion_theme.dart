@@ -3,15 +3,16 @@ import 'package:motor/motor.dart';
 
 class TrayMotionTheme {
   const TrayMotionTheme({
+    required this.route,
     required this.geometry,
     required this.effects,
     required this.interactive,
   });
 
-  /// The single motion used for route entry/exit and every tray size morph.
-  ///
-  /// Expansion, collapse, fullscreen, opening, and dismissal all share this
-  /// motion so their geometry never switches animation styles.
+  /// Motor motion for both route entry and route exit.
+  final Motion route;
+
+  /// Motor motion for changes to the tray's bounds and corner radius.
   final Motion geometry;
 
   /// Motion for page content and shared-element effects, not tray bounds.
@@ -22,8 +23,11 @@ class TrayMotionTheme {
 
   factory TrayMotionTheme.family() {
     return TrayMotionTheme(
-      geometry: const SpringMotion(
+      route: const SpringMotion(
         SpringDescription(mass: 1, stiffness: 240, damping: 26),
+      ),
+      geometry: const SpringMotion(
+        SpringDescription(mass: 0.6, stiffness: 185, damping: 15),
       ),
       effects: const CurvedMotion(
         Duration(milliseconds: 370),
