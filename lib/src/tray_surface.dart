@@ -606,7 +606,11 @@ class _TraySurfaceState extends State<TraySurface>
                                               TrayPresentation.fullscreen;
                                       final surface = DecoratedBox(
                                         decoration: BoxDecoration(
-                                          color: widget.surfaceColor,
+                                          color:
+                                              widget.surfaceColor ??
+                                              (widget.surfaceBuilder == null
+                                                  ? const Color(0xFFFFFFFF)
+                                                  : const Color(0x00000000)),
                                           borderRadius: surfaceRadius,
                                           boxShadow: const [
                                             BoxShadow(

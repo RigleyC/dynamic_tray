@@ -16,7 +16,7 @@ Future<T?> showTray<T>({
   Color barrierColor = const Color(0x52000000),
   bool barrierDismissible = true,
   Widget? footer,
-  Color? surfaceColor = const Color(0xFFFFFFFF),
+  Color? surfaceColor,
   TraySurfaceBuilder? surfaceBuilder,
 }) {
   final controller = TrayController(initialPage: page);
@@ -42,7 +42,7 @@ class TrayRoute<T> extends PopupRoute<T> {
     required Color barrierColor,
     required bool barrierDismissible,
     this.footer,
-    this.surfaceColor = const Color(0xFFFFFFFF),
+    this.surfaceColor,
     this.surfaceBuilder,
     this.restorationId,
   }) : _barrierColor = barrierColor,

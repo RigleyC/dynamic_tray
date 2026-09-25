@@ -34,9 +34,12 @@ final detailsPage = TrayPage(
 
 When a page's `footer` is null, the route-level footer remains the fallback
 unless `hideFooter` is true. The active footer's measured height is included in
-compact tray sizing and reserved from the page viewport. `surfaceColor` can be
-supplied to `showTray` when the app needs a non-white neutral surface; the
-package itself does not read a Material or Cupertino theme.
+compact tray sizing and reserved from the page viewport. The default surface is
+white when no `surfaceBuilder` is provided. When a custom `surfaceBuilder` is
+provided, the default interior is transparent so a host surface, such as a
+themed `Material`, remains visible during content fades. Set `surfaceColor`
+explicitly to paint an interior color in either case. The package itself does
+not read a Material or Cupertino theme.
 
 `TrayHeader` is an optional layout helper. It accepts `leading`, `title`,
 `subtitle`, and `trailing` widgets and does not impose icons, typography,
