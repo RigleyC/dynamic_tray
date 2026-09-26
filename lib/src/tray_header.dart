@@ -23,6 +23,7 @@ class TrayHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasText = title != null || subtitle != null;
+    final hasTwoButtons = leading != null && trailing != null;
     return Row(
       mainAxisSize: MainAxisSize.max,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -33,13 +34,20 @@ class TrayHeader extends StatelessWidget {
         ],
         if (hasText)
           Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (title != null) title!,
-                if (subtitle != null) subtitle!,
-              ],
+            child: Align(
+              alignment:
+                  hasTwoButtons ? Alignment.center : Alignment.centerLeft,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment:
+                    hasTwoButtons
+                        ? CrossAxisAlignment.center
+                        : CrossAxisAlignment.start,
+                children: [
+                  if (title != null) title!,
+                  if (subtitle != null) subtitle!,
+                ],
+              ),
             ),
           ),
         if (trailing != null) ...[
