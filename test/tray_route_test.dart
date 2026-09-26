@@ -324,11 +324,7 @@ class _RecordingGeometryResolver implements TrayGeometryResolver {
   final List<double> heights = [];
 
   @override
-  TrayGeometry resolve(
-    TrayLayoutContext context,
-    TrayPresentation presentation,
-    Size contentSize,
-  ) {
+  TrayGeometry resolve(TrayLayoutContext context, Size contentSize) {
     heights.add(contentSize.height);
     return const TrayGeometry(
       rect: Rect.fromLTWH(0, 0, 320, 240),

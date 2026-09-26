@@ -1,7 +1,5 @@
 import 'package:flutter/widgets.dart';
 
-import 'tray_presentation.dart';
-
 typedef TrayPageBuilder = Widget Function(BuildContext context);
 typedef TrayPageRestorer =
     TrayPage<dynamic> Function(String restorationId, Object? arguments);
@@ -26,7 +24,6 @@ class TrayPage<T> {
     this.footer,
     this.footerBuilder,
     this.hideFooter = false,
-    this.presentation = TrayPresentation.content,
     this.layout = TrayPageLayout.intrinsic,
     this.viewId,
     this.restorationId,
@@ -46,7 +43,6 @@ class TrayPage<T> {
   /// Whether this page hides both its own footer and the route-level fallback.
   final bool hideFooter;
 
-  final TrayPresentation presentation;
   final TrayPageLayout layout;
 
   /// Optional stable identity used by [TrayController.setView] to reuse a

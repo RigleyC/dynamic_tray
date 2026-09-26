@@ -1,8 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:motor/motor.dart';
 
-import 'tray_presentation.dart';
-
 class TrayGeometry {
   const TrayGeometry({required this.rect, required this.borderRadius});
 
@@ -88,11 +86,7 @@ class TrayLayoutContext {
 }
 
 abstract interface class TrayGeometryResolver {
-  TrayGeometry resolve(
-    TrayLayoutContext context,
-    TrayPresentation presentation,
-    Size contentSize,
-  );
+  TrayGeometry resolve(TrayLayoutContext context, Size contentSize);
 }
 
 class DefaultTrayGeometryResolver implements TrayGeometryResolver {
@@ -100,24 +94,16 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
     this.horizontalMargin = 8,
     this.bottomMargin = 8,
     this.maxWidth = 360,
-    this.expandedFraction = 0.72,
-    this.fullscreenRadius = 32,
-    this.contentRadius = 32,
+    this.radius = 38,
   });
 
   final double horizontalMargin;
   final double bottomMargin;
   final double maxWidth;
-  final double expandedFraction;
-  final double fullscreenRadius;
-  final double contentRadius;
+  final double radius;
 
   @override
-  TrayGeometry resolve(
-    TrayLayoutContext context,
-    TrayPresentation presentation,
-    Size contentSize,
-  ) {
+  TrayGeometry resolve(TrayLayoutContext context, Size contentSize) {
     final safeTop = context.padding.top;
     final safeBottom = context.padding.bottom;
     final bottomInset = safeBottom;
@@ -132,26 +118,8 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
     );
     final width = availableWidth.clamp(0.0, maxWidth).toDouble();
 
-    if (presentation == TrayPresentation.fullscreen) {
-      return TrayGeometry(
-        rect: Rect.fromLTRB(
-          horizontalMargin,
-          bottomMargin,
-          context.size.width - horizontalMargin,
-          context.size.height - bottomMargin,
-        ),
-        borderRadius: BorderRadius.circular(fullscreenRadius),
-      );
-    }
-
     final naturalHeight = contentSize.height.clamp(0.0, availableHeight);
-    final height =
-        presentation == TrayPresentation.expanded
-            ? naturalHeight.clamp(
-              availableHeight * expandedFraction,
-              availableHeight,
-            )
-            : naturalHeight;
+    final height = naturalHeight;
     final safeHeight = height == 0 ? 1.0 : height;
 
     return TrayGeometry(
@@ -161,7 +129,7 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
         width,
         safeHeight,
       ),
-      borderRadius: BorderRadius.circular(contentRadius),
+      borderRadius: BorderRadius.circular(radius),
     );
   }
 }

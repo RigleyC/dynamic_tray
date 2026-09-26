@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'tray_page.dart';
-import 'tray_presentation.dart';
 
 class TrayController extends ChangeNotifier {
   TrayController({
@@ -14,14 +13,12 @@ class TrayController extends ChangeNotifier {
     _validatePage(initialPage);
     _entries.add(_TrayEntry<dynamic>(initialPage));
     _visitedPages.add(initialPage);
-    _presentation = initialPage.presentation;
   }
 
   final List<_TrayEntry<dynamic>> _entries = [];
   final List<TrayPage<dynamic>> _visitedPages = [];
   final TrayPageRestorer? _pageRestorer;
   NavigatorState? _navigator;
-  TrayPresentation _presentation = TrayPresentation.content;
   TrayLifecycle _lifecycle = TrayLifecycle.opening;
   TrayPageTransition? _transition;
   int _nextTransitionId = 0;
@@ -30,7 +27,6 @@ class TrayController extends ChangeNotifier {
   bool _routePopAuthorized = false;
 
   TrayPage<dynamic> get currentPage => _entries.last.page;
-  TrayPresentation get presentation => _presentation;
   TrayLifecycle get lifecycle => _lifecycle;
   bool get canPop => _entries.length > 1;
   TrayPageTransition? get transition => _transition;
@@ -47,7 +43,6 @@ class TrayController extends ChangeNotifier {
     if (!_visitedPages.contains(page)) {
       _visitedPages.add(page);
     }
-    _presentation = page.presentation;
     _transition = TrayPageTransition(
       id: _nextTransitionId++,
       outgoing: outgoing,
@@ -118,7 +113,6 @@ class TrayController extends ChangeNotifier {
     final incoming = _entries[_entries.length - 2].page;
     final entry = _entries.removeLast();
     entry.complete(result);
-    _presentation = _entries.last.page.presentation;
     _transition = TrayPageTransition(
       id: _nextTransitionId++,
       outgoing: outgoing,
@@ -129,20 +123,6 @@ class TrayController extends ChangeNotifier {
     return true;
   }
 
-  void present(TrayPresentation presentation) {
-    if (_presentation == presentation) {
-      return;
-    }
-    _presentation = presentation;
-    notifyListeners();
-  }
-
-  void expand() => present(TrayPresentation.expanded);
-
-  void collapse() => present(TrayPresentation.content);
-
-  void fullscreen() => present(TrayPresentation.fullscreen);
-
   /// Returns the current page stack in StandardMessageCodec-compatible data.
   @internal
   List<Object?> get restorationSnapshot => [
@@ -150,11 +130,6 @@ class TrayController extends ChangeNotifier {
       <String, Object?>{
         'id': _entries[index].page.restorationId,
         'arguments': _entries[index].page.restorationArguments,
-        'presentation':
-            (index == _entries.length - 1
-                    ? _presentation
-                    : _entries[index].page.presentation)
-                .name,
       },
   ];
 
@@ -168,7 +143,6 @@ class TrayController extends ChangeNotifier {
     }
 
     final restoredPages = <TrayPage<dynamic>>[];
-    var restoredPresentation = TrayPresentation.content;
     for (final item in snapshot) {
       if (item is! Map) {
         throw StateError('Invalid dynamic_tray restoration entry.');
@@ -184,11 +158,6 @@ class TrayController extends ChangeNotifier {
         );
       }
       restoredPages.add(page);
-      restoredPresentation = page.presentation;
-      final savedPresentation = item['presentation'];
-      if (savedPresentation is String) {
-        restoredPresentation = _presentationFromName(savedPresentation);
-      }
     }
 
     for (final entry in _entries) {
@@ -200,7 +169,6 @@ class TrayController extends ChangeNotifier {
     _visitedPages
       ..clear()
       ..addAll(restoredPages);
-    _presentation = restoredPresentation;
     _transition = null;
     if (notify) {
       notifyListeners();
@@ -234,15 +202,6 @@ class TrayController extends ChangeNotifier {
         'A restorable tray page must define a non-empty restorationId.',
       );
     }
-  }
-
-  TrayPresentation _presentationFromName(String name) {
-    for (final presentation in TrayPresentation.values) {
-      if (presentation.name == name) {
-        return presentation;
-      }
-    }
-    throw StateError('Unknown dynamic_tray presentation "$name".');
   }
 
   @internal

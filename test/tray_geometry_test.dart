@@ -10,47 +10,39 @@ void main() {
     viewInsets: EdgeInsets.zero,
   );
 
-  test('content geometry uses the measured size and bottom safe area', () {
+  test('measured content keeps the reference radius and edge spacing', () {
+    final geometry = resolver.resolve(layout, const Size(320, 240));
+
+    expect(geometry.rect, const Rect.fromLTWH(20, 532, 360, 240));
+    expect(geometry.borderRadius, BorderRadius.circular(38));
+  });
+
+  test('narrow tray keeps the requested eight-pixel edge spacing', () {
     final geometry = resolver.resolve(
-      layout,
-      TrayPresentation.content,
+      const TrayLayoutContext(
+        size: Size(360, 800),
+        padding: EdgeInsets.zero,
+        viewInsets: EdgeInsets.zero,
+      ),
       const Size(320, 240),
     );
 
-    expect(geometry.rect, const Rect.fromLTWH(8, 532, 384, 240));
-    expect(geometry.borderRadius, BorderRadius.circular(28));
+    expect(geometry.rect, const Rect.fromLTWH(8, 552, 344, 240));
   });
 
-  test('expanded geometry has a minimum fraction of available height', () {
-    final geometry = resolver.resolve(
-      layout,
-      TrayPresentation.expanded,
-      const Size(320, 100),
-    );
+  test('long measured content fills the available height', () {
+    final geometry = resolver.resolve(layout, const Size(320, 900));
 
-    expect(geometry.rect.height, closeTo(538.56, 0.001));
+    expect(geometry.rect.height, 748);
     expect(geometry.rect.bottom, 772);
   });
 
-  test('fullscreen geometry occupies the whole route', () {
-    final geometry = resolver.resolve(
-      layout,
-      TrayPresentation.fullscreen,
-      const Size(320, 240),
-    );
-
-    expect(geometry.rect, const Rect.fromLTWH(0, 0, 400, 800));
-    expect(geometry.borderRadius, BorderRadius.zero);
-  });
-
-  test('content geometry clamps content to available height', () {
-    final geometry = resolver.resolve(
-      layout,
-      TrayPresentation.content,
-      const Size(320, 900),
-    );
+  test('long content is capped at the safe available height', () {
+    final geometry = resolver.resolve(layout, const Size(320, 900));
 
     expect(geometry.rect.height, 748);
+    expect(geometry.rect.top, 24);
+    expect(geometry.borderRadius, BorderRadius.circular(38));
   });
 
   test('geometry motion converter preserves bounds and radius', () {

@@ -27,19 +27,6 @@ void main() {
     expect(controller.canPop, isFalse);
   });
 
-  test('presentation helpers update the current presentation', () {
-    final controller = TrayController(initialPage: page('root'));
-
-    controller.expand();
-    expect(controller.presentation, TrayPresentation.expanded);
-
-    controller.fullscreen();
-    expect(controller.presentation, TrayPresentation.fullscreen);
-
-    controller.collapse();
-    expect(controller.presentation, TrayPresentation.content);
-  });
-
   test('push and pop expose an outgoing/incoming page transition', () {
     final root = page<void>('root');
     final child = page<void>('child');
@@ -79,14 +66,12 @@ void main() {
       pageRestorer: restorePage,
     );
     controller.push<void>(restorePage('child', <String, Object?>{'id': 2}));
-    controller.fullscreen();
 
     expect(controller.restorationSnapshot, [
-      {'id': 'root', 'arguments': 1, 'presentation': 'content'},
+      {'id': 'root', 'arguments': 1},
       {
         'id': 'child',
         'arguments': <String, Object?>{'id': 2},
-        'presentation': 'fullscreen',
       },
     ]);
 
@@ -98,7 +83,6 @@ void main() {
     expect(controller.pages, hasLength(2));
     expect(controller.currentPage.restorationId, 'details');
     expect(controller.currentPage.restorationArguments, 'wallet');
-    expect(controller.presentation, TrayPresentation.fullscreen);
   });
 
   test('requires restoration IDs when a page restorer is configured', () {

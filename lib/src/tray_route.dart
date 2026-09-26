@@ -18,7 +18,6 @@ Future<T?> showTray<T>({
   Widget? footer,
   WidgetBuilder? footerBuilder,
   Color? surfaceColor,
-  TraySurfaceBuilder? surfaceBuilder,
 }) {
   final controller = TrayController(initialPage: page);
   return Navigator.of(context, rootNavigator: useRootNavigator).push<T>(
@@ -31,7 +30,6 @@ Future<T?> showTray<T>({
       footer: footer,
       footerBuilder: footerBuilder,
       surfaceColor: surfaceColor,
-      surfaceBuilder: surfaceBuilder,
     ),
   );
 }
@@ -46,7 +44,6 @@ class TrayRoute<T> extends PopupRoute<T> {
     this.footer,
     this.footerBuilder,
     this.surfaceColor,
-    this.surfaceBuilder,
     this.restorationId,
   }) : _barrierColor = barrierColor,
        _barrierDismissible = barrierDismissible;
@@ -59,7 +56,6 @@ class TrayRoute<T> extends PopupRoute<T> {
   final Widget? footer;
   final WidgetBuilder? footerBuilder;
   final Color? surfaceColor;
-  final TraySurfaceBuilder? surfaceBuilder;
   final String? restorationId;
   Object? _pendingResult;
 
@@ -108,7 +104,6 @@ class TrayRoute<T> extends PopupRoute<T> {
         footer: footer,
         footerBuilder: footerBuilder,
         surfaceColor: surfaceColor,
-        surfaceBuilder: surfaceBuilder,
         barrierColor: _barrierColor,
         barrierDismissible: _barrierDismissible,
         restorationId: trayController.isRestorable ? restorationId : null,
@@ -132,11 +127,7 @@ class TrayRoute<T> extends PopupRoute<T> {
       return super.didPop(result);
     }
     if (trayController.lifecycle == TrayLifecycle.closing) return false;
-    if (trayController.canPop) {
-      trayController.pop<Object?>(result);
-    } else {
-      trayController.dismiss(result);
-    }
+    trayController.dismiss(result);
     return false;
   }
 

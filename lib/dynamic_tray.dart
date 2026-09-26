@@ -5,7 +5,6 @@ export 'src/tray_handle.dart';
 export 'src/tray_header.dart';
 export 'src/tray_motion_theme.dart';
 export 'src/tray_page.dart';
-export 'src/tray_presentation.dart';
 export 'src/tray_route.dart';
 export 'src/tray_shared_element.dart'
     hide

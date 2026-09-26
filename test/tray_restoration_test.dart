@@ -38,7 +38,6 @@ void main() {
 
     expect(_restorableController!.currentPage.restorationId, 'details');
     expect(_restorableController!.currentPage.restorationArguments, 'wallet');
-    expect(_restorableController!.presentation, TrayPresentation.fullscreen);
     expect(find.text('details:wallet'), findsOneWidget);
   });
 }
@@ -79,7 +78,6 @@ TrayPage<dynamic> _restorablePage(String id, Object? arguments) {
       return TrayPage<void>(
         restorationId: id,
         restorationArguments: arguments,
-        presentation: TrayPresentation.fullscreen,
         builder: (_) => Text('details:$arguments'),
       );
     default:

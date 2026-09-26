@@ -7,16 +7,8 @@ import 'tray_geometry.dart';
 import 'tray_handle.dart';
 import 'tray_motion_theme.dart';
 import 'tray_page.dart';
-import 'tray_presentation.dart';
 import 'tray_restoration.dart';
 import 'tray_shared_element.dart';
-
-typedef TraySurfaceBuilder =
-    Widget Function(
-      BuildContext context,
-      BorderRadius borderRadius,
-      Widget child,
-    );
 
 class TraySurface extends StatefulWidget {
   const TraySurface({
@@ -27,7 +19,6 @@ class TraySurface extends StatefulWidget {
     this.footer,
     this.footerBuilder,
     this.surfaceColor,
-    this.surfaceBuilder,
     required this.barrierColor,
     required this.barrierDismissible,
     this.restorationId,
@@ -39,7 +30,6 @@ class TraySurface extends StatefulWidget {
   final Widget? footer;
   final WidgetBuilder? footerBuilder;
   final Color? surfaceColor;
-  final TraySurfaceBuilder? surfaceBuilder;
   final Color barrierColor;
   final bool barrierDismissible;
   final String? restorationId;
@@ -51,7 +41,6 @@ class TraySurface extends StatefulWidget {
 class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   Size _contentSize = Size.zero;
   final Map<TrayPage<dynamic>, Size> _contentSizes = {};
-  final Set<TrayPage<dynamic>> _autoFullscreenPages = {};
   bool _hasInitialMeasurement = false;
   bool _isDragging = false;
   double _dragTranslation = 0;
@@ -188,7 +177,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     _visualMotionKey.currentState?.cancelDrag();
   }
 
-  void _settleDrag(BuildContext context, [double velocity = 0]) {
+  void _settleDrag([double velocity = 0]) {
     if (!_isDragging) {
       return;
     }
@@ -213,13 +202,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   }) {
     Widget child = SizedBox(
       width: width,
-      child:
-          pageEntry.presentation == TrayPresentation.fullscreen
-              ? page
-              : Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: page,
-              ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: page,
+      ),
     );
     child = TraySharedElementScope(
       registry: _sharedElementRegistry,
@@ -343,63 +329,17 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
             final activeFooterHeight =
                 footer == null ? 0.0 : estimatedFooterHeight;
             final safeBottom = mediaQuery.padding.bottom;
-            final availableHeight =
-                (constraints.biggest.height -
-                        mediaQuery.padding.top -
-                        safeBottom)
-                    .clamp(0.0, constraints.biggest.height)
-                    .toDouble();
-            final resolver = widget.geometryResolver;
-            final expandedFraction =
-                resolver is DefaultTrayGeometryResolver
-                    ? resolver.expandedFraction
-                    : 0.72;
-            final activePageMeasuredHeight = _contentSizes[currentPage]?.height;
-            final measuredPageHeight =
-                activePageMeasuredHeight ?? _contentSize.height;
-            final measuredTrayHeight =
-                measuredPageHeight + activeFooterHeight + 60;
-            final exceedsCompactLimit =
-                currentPage.layout == TrayPageLayout.intrinsic &&
-                activePageMeasuredHeight != null &&
-                activePageMeasuredHeight > 0 &&
-                measuredTrayHeight > availableHeight * expandedFraction;
-            if (exceedsCompactLimit) {
-              _autoFullscreenPages.add(currentPage);
-            }
-            final growsToFullscreen = _autoFullscreenPages.contains(
-              currentPage,
-            );
-            final effectivePresentation =
-                growsToFullscreen
-                    ? TrayPresentation.fullscreen
-                    : widget.controller.presentation;
-            final followsKeyboardInset =
-                resolver is DefaultTrayGeometryResolver;
             final layoutContext = TrayLayoutContext(
               size: constraints.biggest,
               padding: mediaQuery.padding,
-              viewInsets:
-                  followsKeyboardInset
-                      ? EdgeInsets.zero
-                      : mediaQuery.viewInsets,
+              viewInsets: mediaQuery.viewInsets,
             );
             var boundedFallbackHeight =
                 (layoutContext.size.height -
                         mediaQuery.padding.top -
                         safeBottom)
                     .clamp(0.0, layoutContext.size.height)
-                    .toDouble() *
-                0.72;
-            if (resolver is DefaultTrayGeometryResolver) {
-              boundedFallbackHeight =
-                  (layoutContext.size.height -
-                          mediaQuery.padding.top -
-                          safeBottom)
-                      .clamp(0.0, layoutContext.size.height)
-                      .toDouble() *
-                  resolver.expandedFraction;
-            }
+                    .toDouble();
             final measuredContentSize =
                 currentPage.layout == TrayPageLayout.bounded
                     ? Size(
@@ -413,7 +353,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
             );
             final geometry = widget.geometryResolver.resolve(
               layoutContext,
-              effectivePresentation,
               contentSize,
             );
             final transition = widget.controller.transition;
@@ -449,21 +388,8 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                       routeMotion: widget.motionTheme.route,
                       closeMotion: widget.motionTheme.close,
                       interactiveMotion: widget.motionTheme.interactive,
-                      presentation: effectivePresentation,
                       keyboardInset: mediaQuery.viewInsets.bottom,
-                      followsKeyboardInset: followsKeyboardInset,
-                      keyboardFullscreenStartHeight:
-                          resolver is DefaultTrayGeometryResolver
-                              ? (layoutContext.size.height -
-                                      mediaQuery.padding.top -
-                                      safeBottom) *
-                                  resolver.expandedFraction
-                              : layoutContext.size.height,
-                      keyboardFullscreenEndHeight:
-                          resolver is DefaultTrayGeometryResolver
-                              ? layoutContext.size.height -
-                                  resolver.bottomMargin * 2
-                              : layoutContext.size.height,
+                      safeBottomInset: safeBottom,
                       initialMeasurementReady: _hasInitialMeasurement,
                       closing:
                           widget.controller.lifecycle == TrayLifecycle.closing,
@@ -471,19 +397,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                           widget.controller.completePageTransition,
                       contentBuilder: (context, geometry, pageProgresses) {
                         final rect = geometry.rect;
-                        final isFullscreen =
-                            effectivePresentation ==
-                            TrayPresentation.fullscreen;
                         return Positioned.fill(
-                          top: isFullscreen ? 0 : 52,
-                          bottom:
-                              isFullscreen
-                                  ? (footer == null
-                                      ? 0
-                                      : activeFooterHeight + 8)
-                                  : (footer == null
-                                      ? 8
-                                      : activeFooterHeight + 8),
+                          top: 36,
+                          bottom: footer == null ? 24 : activeFooterHeight + 24,
                           child: _buildContent(
                             context: context,
                             rect: Rect.fromLTWH(
@@ -539,16 +455,11 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                 scale: visualState.surfaceScale,
                                 child: Builder(
                                   builder: (context) {
-                                    final canDrag =
-                                        effectivePresentation !=
-                                        TrayPresentation.fullscreen;
                                     final surface = DecoratedBox(
                                       decoration: BoxDecoration(
                                         color:
                                             widget.surfaceColor ??
-                                            (widget.surfaceBuilder == null
-                                                ? const Color(0xFF141414)
-                                                : const Color(0x00000000)),
+                                            const Color(0xFF141414),
                                         borderRadius: surfaceRadius,
                                       ),
                                       child: ClipRRect(
@@ -561,54 +472,46 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                             ),
                                             if (footer != null)
                                               Positioned(
-                                                bottom: 8,
-                                                left: 16,
-                                                right: 16,
+                                                bottom: 24,
+                                                left: 24,
+                                                right: 24,
                                                 child: footer,
                                               ),
-                                            if (canDrag)
-                                              Positioned(
-                                                top: 8,
-                                                left: 0,
-                                                right: 0,
-                                                height: 44,
-                                                child: GestureDetector(
-                                                  behavior:
-                                                      HitTestBehavior.opaque,
-                                                  onVerticalDragStart:
-                                                      _startDrag,
-                                                  onVerticalDragUpdate:
-                                                      _updateDrag,
-                                                  onVerticalDragEnd:
-                                                      (details) => _settleDrag(
-                                                        context,
-                                                        details.primaryVelocity ??
-                                                            0,
-                                                      ),
-                                                  onVerticalDragCancel:
-                                                      _cancelDrag,
-                                                  child: const Align(
-                                                    alignment:
-                                                        Alignment.topCenter,
-                                                    child: Padding(
-                                                      padding: EdgeInsets.only(
-                                                        top: 8,
-                                                      ),
-                                                      child: TrayHandle(),
+                                            Positioned(
+                                              top: 8,
+                                              left: 0,
+                                              right: 0,
+                                              height: 28,
+                                              child: GestureDetector(
+                                                behavior:
+                                                    HitTestBehavior.opaque,
+                                                onVerticalDragStart: _startDrag,
+                                                onVerticalDragUpdate:
+                                                    _updateDrag,
+                                                onVerticalDragEnd:
+                                                    (details) => _settleDrag(
+                                                      details.primaryVelocity ??
+                                                          0,
                                                     ),
+                                                onVerticalDragCancel:
+                                                    _cancelDrag,
+                                                child: const Align(
+                                                  alignment:
+                                                      Alignment.topCenter,
+                                                  child: Padding(
+                                                    padding: EdgeInsets.only(
+                                                      top: 8,
+                                                    ),
+                                                    child: TrayHandle(),
                                                   ),
                                                 ),
                                               ),
+                                            ),
                                           ],
                                         ),
                                       ),
                                     );
-                                    return widget.surfaceBuilder?.call(
-                                          context,
-                                          surfaceRadius,
-                                          surface,
-                                        ) ??
-                                        surface;
+                                    return surface;
                                   },
                                 ),
                               ),
@@ -641,11 +544,8 @@ class _TrayVisualMotionBuilder extends StatefulWidget {
     required this.routeMotion,
     required this.closeMotion,
     required this.interactiveMotion,
-    required this.presentation,
     required this.keyboardInset,
-    required this.followsKeyboardInset,
-    required this.keyboardFullscreenStartHeight,
-    required this.keyboardFullscreenEndHeight,
+    required this.safeBottomInset,
     required this.initialMeasurementReady,
     required this.closing,
     required this.onTransitionSettled,
@@ -662,11 +562,8 @@ class _TrayVisualMotionBuilder extends StatefulWidget {
   final Motion routeMotion;
   final Motion closeMotion;
   final Motion interactiveMotion;
-  final TrayPresentation presentation;
   final double keyboardInset;
-  final bool followsKeyboardInset;
-  final double keyboardFullscreenStartHeight;
-  final double keyboardFullscreenEndHeight;
+  final double safeBottomInset;
   final bool initialMeasurementReady;
   final bool closing;
   final ValueChanged<int> onTransitionSettled;
@@ -687,7 +584,6 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
     with TickerProviderStateMixin {
   late final MotionController<TrayGeometry> _geometryMotion;
   late final SingleMotionController _presentationMotion;
-  late final SingleMotionController _backdropMotion;
   late final SingleMotionController _dragMotion;
   final Map<TrayPage<dynamic>, SingleMotionController> _pageMotions = {};
   final Map<TrayPage<dynamic>, double> _pageTargets = {};
@@ -696,13 +592,9 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
 
   double _dragOrigin = 0;
 
-  double get _backdropTarget =>
-      widget.presentation == TrayPresentation.fullscreen ? 0 : 1;
-
   Listenable get _allMotions => Listenable.merge([
     _geometryMotion,
     _presentationMotion,
-    _backdropMotion,
     _dragMotion,
     ..._pageMotions.values,
   ]);
@@ -722,11 +614,6 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
       vsync: this,
       initialValue: 0,
     )..addStatusListener(_handlePresentationStatus);
-    _backdropMotion = SingleMotionController(
-      motion: widget.effectsMotion,
-      vsync: this,
-      initialValue: _backdropTarget,
-    );
     _dragMotion = SingleMotionController(
       motion: widget.interactiveMotion,
       vsync: this,
@@ -743,7 +630,6 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
   void didUpdateWidget(covariant _TrayVisualMotionBuilder oldWidget) {
     super.didUpdateWidget(oldWidget);
     final geometryChanged = oldWidget.geometry != widget.geometry;
-    final backdropChanged = oldWidget.presentation != widget.presentation;
     final transitionChanged = oldWidget.transition?.id != widget.transition?.id;
     final openingStarted =
         !oldWidget.initialMeasurementReady && widget.initialMeasurementReady;
@@ -768,8 +654,8 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
       return;
     }
     if (openingStarted) {
-      _geometryMotion.value = widget.geometry;
-      if (backdropChanged) _backdropMotion.value = _backdropTarget;
+      _geometryMotion.motion = widget.geometryMotion;
+      _geometryMotion.animateTo(widget.geometry);
       if (transitionChanged ||
           !_samePageSequence(oldWidget.pages, widget.pages)) {
         _syncPageMotions();
@@ -781,10 +667,6 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
     if (geometryChanged) {
       _geometryMotion.motion = widget.geometryMotion;
       _geometryMotion.animateTo(widget.geometry);
-    }
-    if (backdropChanged) {
-      _backdropMotion.motion = widget.effectsMotion;
-      _backdropMotion.animateTo(_backdropTarget);
     }
     if (transitionChanged ||
         !_samePageSequence(oldWidget.pages, widget.pages)) {
@@ -899,14 +781,7 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
 
   void settleDrag(double velocityY) {
     if (_dragMotion.value > 110 || velocityY > 1000) {
-      if (widget.controller.canPop &&
-          widget.presentation == TrayPresentation.fullscreen) {
-        _dragMotion.motion = widget.interactiveMotion;
-        _dragMotion.animateTo(0, withVelocity: velocityY);
-        widget.controller.goBack();
-      } else {
-        widget.controller.dismiss();
-      }
+      widget.controller.dismiss();
       return;
     }
     _dragMotion.motion = widget.interactiveMotion;
@@ -922,7 +797,6 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
   void dispose() {
     _geometryMotion.dispose();
     _presentationMotion.dispose();
-    _backdropMotion.dispose();
     _dragMotion.dispose();
     for (final motion in _pageMotions.values) {
       motion.dispose();
@@ -940,31 +814,14 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
         final clampedProgress = routeProgress.clamp(0.0, 1.0).toDouble();
         const travel = 1000.0;
         final dragProgress = (_dragMotion.value / travel).clamp(0.0, 1.0);
-        var presentationRect = geometry.rect;
-        var keyboardOffset = 0.0;
-        if (widget.followsKeyboardInset && widget.keyboardInset > 0) {
-          final keyboardLift = widget.keyboardInset;
-          final fullscreenProgress =
-              ((geometry.rect.height - widget.keyboardFullscreenStartHeight) /
-                      (widget.keyboardFullscreenEndHeight -
-                              widget.keyboardFullscreenStartHeight)
-                          .clamp(1.0, double.infinity))
-                  .clamp(0.0, 1.0)
-                  .toDouble();
-          keyboardOffset = keyboardLift * (1 - fullscreenProgress);
-          presentationRect = Rect.fromLTWH(
-            geometry.rect.left,
-            geometry.rect.top,
-            geometry.rect.width,
-            (geometry.rect.height - keyboardLift * fullscreenProgress)
-                .clamp(0.0, geometry.rect.height)
-                .toDouble(),
-          );
-        }
-        final projectedRect = presentationRect.shift(
+        final keyboardLift =
+            (widget.keyboardInset - widget.safeBottomInset)
+                .clamp(0.0, double.infinity)
+                .toDouble();
+        final projectedRect = geometry.rect.shift(
           Offset(
             0,
-            travel * (1 - clampedProgress) + _dragMotion.value - keyboardOffset,
+            travel * (1 - clampedProgress) + _dragMotion.value - keyboardLift,
           ),
         );
         final pageProgresses = <TrayPage<dynamic>, double>{
@@ -977,9 +834,7 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
           surfaceScale: 0.94 + 0.06 * clampedProgress,
           surfaceRadius: geometry.borderRadius,
           backdropOpacity:
-              (clampedProgress *
-                      _backdropMotion.value.clamp(0.0, 1.0) *
-                      (1 - 0.6 * dragProgress))
+              (clampedProgress * (1 - 0.6 * dragProgress))
                   .clamp(0.0, 1.0)
                   .toDouble(),
         );

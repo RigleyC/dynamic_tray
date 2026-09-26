@@ -1,32 +1,19 @@
 # dynamic_tray
 
-A Flutter tray inspired by Expo Dynamic Tray: one modal session that adapts to
-its content and changes views in place. Open it directly from a `BuildContext`;
-inside the route, use `context.tray` to change views or close the session.
+A Flutter tray inspired by Expo Dynamic Tray. One route owns the complete tray
+session; pages, content-driven sizing, keyboard movement, dragging, backdrop,
+and dismissal stay coordinated on that surface.
 
-## Quick start
-
-Open a tray from any button. The returned future completes with the optional
-result when the session closes. No root widget or manually-created controller
-is required:
+## Open a tray
 
 ```dart
 final result = await context.openTray<String>(
   builder: (_) => const WalletDetailsPage(),
-  footer: (context) => SizedBox(
-    height: 65,
-    child: FilledButton(
-      onPressed: () => context.tray.setView(
-        viewId: 'choose-category',
-        builder: (_) => const ChooseCategoryPage(),
-      ),
-      child: const Text('Change category'),
-    ),
-  ),
 );
 ```
 
-Change views inside the same tray surface, go back, or close with a result:
+Inside a page, use `context.tray` to replace the current view, navigate back,
+or close the entire tray:
 
 ```dart
 context.tray.setView(
@@ -38,61 +25,33 @@ context.tray.goBack();
 context.tray.close('saved');
 ```
 
-The common path does not require a manually-created controller, view IDs,
-layout/presentation flags, or animation configuration. Intrinsic content sizes
-the tray automatically; when it exceeds 72% of the available height, the tray
-morphs to fullscreen for that page visit, avoiding threshold oscillation when
-fullscreen width changes text wrapping. A `ListView` or `CustomScrollView` at the page root needs
-the optional `layout: TrayPageLayout.bounded`, which provides a finite viewport
-for scrolling. Add `viewId` only when a view should be reused after revisiting
-it. A footer is optional and occupies the reference's fixed 65 px slot.
+`goBack` returns to the previous view within the same tray. `close` and
+`dismiss` close the whole session. Android system back also dismisses the tray.
 
-## Motion and behavior goals
+## Layout and behavior
 
-The implementation target is the Expo reference behavior, not merely matching
-its spring constants:
+- Intrinsic pages size the tray to their measured content. If content changes
+  after loading, the tray resizes with the reference height spring.
+- `TrayPageLayout.bounded` gives scrolling pages a finite viewport that fills
+  the available safe height. Use it for a root `ListView` or
+  `CustomScrollView`; the page owns its scrolling behavior.
+- The default surface follows the reference's 360 px maximum width, 38 px
+  corner radius, 24 px inner page padding, handle, and persistent 65 px footer
+  slot. The only spacing override is an 8 px gap from the device edges and
+  keyboard, in addition to system safe-area insets.
+- Opening uses the reference spring, 0.94-to-1 scale, and a 1000 px travel.
+  Closing uses its 340 ms timing curve. Content-height changes use a spring;
+  page changes use a 370 ms fade and 0.96-to-1 scale.
+- Dragging is attached to the handle. It dismisses the tray past 110 px or
+  above 1000 px/s; otherwise it settles back with the gesture velocity.
+- `context.tray.setView` and `goBack` transition pages without pushing another
+  route. The previous view remains available in the stack during the transition.
+- Motion is implemented through Motor. `TrayMotionTheme.family()` provides
+  the reference profiles, and `TrayMotionTheme` can be customized when needed.
 
-- One tray session and one surface while switching views; visited views stay
-  mounted for that session and are released when it closes.
-- One visual coordinator composes independent Motor controllers for bounds,
-  presentation, backdrop, page crossfade, and drag. Retargeting one channel
-  does not restart another, and each action keeps the reference's own profile.
-- Drag begins from the handle, uses the reference distance/velocity thresholds,
-  and returns with gesture velocity when it is cancelled.
-- Compact surfaces keep an 8 px device-edge and keyboard gap. The fullscreen
-  surface keeps the same edge inset, and its page fills the surface without the
-  compact page padding or drag handle. Compact page content has 16 px horizontal
-  padding; fullscreen pages own their content padding.
-- Default sizing, footer reservation, safe areas, and view transitions follow
-  the Expo tray. Flutter-specific restoration and shared elements remain
-  optional; fullscreen is reached by explicit presentation or tall intrinsic
-  content, and returning from a stacked fullscreen page morphs to its prior view.
-
-These are code-level behavior targets, not a claim of verified visual parity.
-Confirm the experience on-device for opening, closing,
-content resizing, both directions of view changes, drag/cancel, keyboard, and
-Android back before calling the port complete.
-
-## Optional widgets
-
-`TrayHeader` is a neutral layout helper: the caller supplies each widget, so the
-package does not impose app typography, colors, or icon choices.
-
-```dart
-TrayHeader(
-  leading: const AccountAvatar(),
-  title: const Text('Choose account'),
-  subtitle: const Text('Select where to transfer from.'),
-  trailing: const Text('Done'),
-)
-```
-
-The Expo sample's trigger, handle, and action buttons are useful interaction
-patterns, but their app-specific styling should not become mandatory package
-configuration. A trigger convenience widget may be added later; opening through
-`context.openTray` remains the basic API.
+`TrayHeader` is an optional neutral layout helper; the package does not impose
+Material or Cupertino widgets, app colors, or typography on page content.
 
 ## Example
 
-Run the interactive example from this package with `cd example` and
-`flutter run`.
+Run the interactive example with `cd example` and `flutter run`.
