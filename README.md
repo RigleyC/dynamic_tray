@@ -45,10 +45,11 @@ destination again reuses its page instead of adding another history entry.
   keyboard open, the tray sits 8 px above it. There is no default
   width cap; set `maxWidth` on the geometry resolver to opt into a centered
   width limit.
-- Opening uses the reference spring, 0.94-to-1 scale, and a 1000 px travel.
-  Closing uses a faster 200 ms ease-in curve without overshoot. Content-height
-  changes use a spring; incoming pages use a 370 ms fade and 0.96-to-1 scale,
-  while outgoing pages fade over 180 ms with an ease-in curve.
+- Opening starts the reference spring as soon as the tray mounts, with a
+  0.94-to-1 scale and 1000 px travel. Its first measured content size is applied
+  directly; later content-height changes use a spring. Closing uses the
+  reference 340 ms cubic curve. Incoming pages use a 370 ms fade and 0.96-to-1
+  scale, while outgoing pages fade over 180 ms with an ease-in curve.
 - Dragging is attached to the handle. It dismisses the tray past 110 px or
   above 1000 px/s; otherwise it settles back with the gesture velocity.
 - `context.tray.setView` and `goBack` transition pages without pushing another

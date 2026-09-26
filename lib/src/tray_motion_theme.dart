@@ -5,8 +5,8 @@ class TrayMotionTheme {
   const TrayMotionTheme({
     required this.route,
     this.close = const CurvedMotion(
-      Duration(milliseconds: 200),
-      Cubic(0.42, 0, 1, 1),
+      Duration(milliseconds: 340),
+      Cubic(0.55, 0, 1, 0.45),
     ),
     required this.geometry,
     required this.effects,
@@ -41,8 +41,8 @@ class TrayMotionTheme {
         SpringDescription(mass: 1, stiffness: 240, damping: 26),
       ),
       close: const CurvedMotion(
-        Duration(milliseconds: 200),
-        Cubic(0.42, 0, 1, 1),
+        Duration(milliseconds: 340),
+        Cubic(0.55, 0, 1, 0.45),
       ),
       geometry: const SpringMotion(
         SpringDescription(mass: 0.6, stiffness: 185, damping: 15),

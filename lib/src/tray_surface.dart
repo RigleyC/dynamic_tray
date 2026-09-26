@@ -647,9 +647,11 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       vsync: this,
     );
     _syncPageMotions();
-    if (widget.initialMeasurementReady && !widget.closing) {
+    // Start presentation as soon as the coordinator mounts. The surface is
+    // still offscreen while its first intrinsic layout is measured.
+    if (!widget.closing) {
       _presentationMotion.animateTo(1);
-    } else if (widget.closing) {
+    } else {
       _completeDismissAfterFrame();
     }
   }
@@ -671,6 +673,11 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       }
       return;
     }
+    // A close can begin before the first layout measurement arrives. Ignore
+    // that late measurement for presentation so it cannot reopen the tray.
+    if (widget.closing) {
+      return;
+    }
     if (!widget.initialMeasurementReady) {
       if (geometryChanged) {
         _geometryMotion.value = widget.geometry;
@@ -682,14 +689,13 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       return;
     }
     if (openingStarted) {
-      _geometryMotion.motion = widget.geometryMotion;
-      _geometryMotion.animateTo(widget.geometry);
+      // The first measured size is the natural starting geometry, like the
+      // first onLayout in the reference. Only later size changes are animated.
+      _geometryMotion.value = widget.geometry;
       if (transitionChanged ||
           !_samePageSequence(oldWidget.pages, widget.pages)) {
         _syncPageMotions();
       }
-      _presentationMotion.motion = widget.routeMotion;
-      _presentationMotion.animateTo(1);
       return;
     }
     if (geometryChanged) {
