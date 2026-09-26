@@ -125,7 +125,44 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     return Rect.fromPoints(topLeft, bottomRight);
   }
 
-  void _updateContentSize(TrayPage<dynamic> page, Size size) {
+  TrayGeometry _geometryForContentSize(
+    TrayPage<dynamic> page,
+    Size size,
+    TrayLayoutContext layoutContext,
+    double activeFooterHeight,
+  ) {
+    const innerBottomPadding = 24.0;
+    final viewportBottomGap = layoutContext.viewInsets.bottom + 8.0;
+    final boundedFallbackHeight =
+        (layoutContext.size.height -
+                layoutContext.padding.top -
+                viewportBottomGap -
+                activeFooterHeight -
+                36 -
+                innerBottomPadding)
+            .clamp(0.0, layoutContext.size.height)
+            .toDouble();
+    final measuredContentSize =
+        page.layout == TrayPageLayout.bounded
+            ? Size(size.width, boundedFallbackHeight)
+            : size;
+    return widget.geometryResolver.resolve(
+      layoutContext,
+      Size(
+        measuredContentSize.width,
+        measuredContentSize.height +
+            activeFooterHeight +
+            36 +
+            innerBottomPadding,
+      ),
+    );
+  }
+
+  void _updateContentSize(
+    TrayPage<dynamic> page,
+    Size size,
+    TrayGeometry geometry,
+  ) {
     if (!mounted) {
       return;
     }
@@ -144,22 +181,41 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     if (previousSize == size && !isInitialMeasurement && !updatesFallbackSize) {
       return;
     }
-    setState(() {
-      _contentSizes[page] = size;
-      if (isCurrentPage) {
-        _contentSize = size;
-      }
-      if (isInitialMeasurement) {
-        _hasInitialMeasurement = true;
-      }
-    });
+    _contentSizes[page] = size;
+    if (isCurrentPage) {
+      _contentSize = size;
+    }
+    if (isInitialMeasurement) _hasInitialMeasurement = true;
+    _visualMotionKey.currentState?.reportMeasuredGeometry(
+      geometry,
+      firstMeasurement: isInitialMeasurement,
+    );
   }
 
-  void _updateFooterHeight(Size size) {
+  void _updateFooterHeight(
+    Size size,
+    TrayPage<dynamic> currentPage,
+    TrayLayoutContext layoutContext,
+  ) {
     if (!mounted || (_footerHeight - size.height).abs() < 0.5) {
       return;
     }
-    setState(() => _footerHeight = size.height);
+    _footerHeight = size.height;
+    final contentSize = _contentSizes[currentPage] ?? _contentSize;
+    _visualMotionKey.currentState?.reportMeasuredGeometry(
+      _geometryForContentSize(
+        currentPage,
+        contentSize,
+        layoutContext,
+        size.height,
+      ),
+      // The coordinator folds this into the first snap only while that snap
+      // is still pending. A footer that first appears on a later page animates.
+      firstMeasurement: false,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _startDrag(DragStartDetails details) {
@@ -202,6 +258,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     required double width,
     required double height,
     required bool measure,
+    required TrayGeometry Function(Size) geometryForSize,
     required bool visible,
     required bool interactive,
     required double opacity,
@@ -225,7 +282,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     );
     child = TraySizeObserver(
       enabled: measure,
-      onSizeChanged: (size) => _updateContentSize(pageEntry, size),
+      deferCallback: false,
+      onSizeChanged:
+          (size) => _updateContentSize(pageEntry, size, geometryForSize(size)),
       child: child,
     );
     child =
@@ -260,6 +319,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     required int currentIndex,
     required TrayPageTransition? transition,
     required Map<TrayPage<dynamic>, double> pageProgresses,
+    required TrayGeometry Function(TrayPage<dynamic>, Size) geometryForSize,
   }) {
     final outgoingIndex =
         transition == null ? -1 : pages.indexOf(transition.outgoing);
@@ -277,6 +337,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
           width: rect.width,
           height: rect.height,
           measure: isCurrent,
+          geometryForSize: (size) => geometryForSize(page, size),
           visible: isCurrent || isOutgoing || progress > 0,
           interactive: isCurrent,
           opacity: progress,
@@ -395,6 +456,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                       key: _visualMotionKey,
                       controller: widget.controller,
                       geometry: geometry,
+                      geometryIsMeasured: _contentSizes.containsKey(
+                        currentPage,
+                      ),
                       pages: pages,
                       transition: transition,
                       geometryMotion: widget.motionTheme.geometry,
@@ -407,7 +471,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                           mediaQuery.viewInsets.bottom
                               .clamp(0.0, double.infinity)
                               .toDouble(),
-                      initialMeasurementReady: _hasInitialMeasurement,
                       closing:
                           widget.controller.lifecycle == TrayLifecycle.closing,
                       onTransitionSettled:
@@ -438,6 +501,13 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                             currentIndex: pages.indexOf(currentPage),
                             transition: transition,
                             pageProgresses: visualState.pageProgresses,
+                            geometryForSize:
+                                (page, size) => _geometryForContentSize(
+                                  page,
+                                  size,
+                                  layoutContext,
+                                  footer == null ? 0.0 : _footerHeight,
+                                ),
                           ),
                         );
                       },
@@ -506,8 +576,14 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                                 right: 24,
                                                 child: TraySizeObserver(
                                                   enabled: true,
+                                                  deferCallback: false,
                                                   onSizeChanged:
-                                                      _updateFooterHeight,
+                                                      (size) =>
+                                                          _updateFooterHeight(
+                                                            size,
+                                                            currentPage,
+                                                            layoutContext,
+                                                          ),
                                                   child: footer,
                                                 ),
                                               ),
@@ -571,6 +647,7 @@ class _TrayMotionCoordinator extends StatefulWidget {
     super.key,
     required this.controller,
     required this.geometry,
+    required this.geometryIsMeasured,
     required this.pages,
     required this.transition,
     required this.geometryMotion,
@@ -580,7 +657,6 @@ class _TrayMotionCoordinator extends StatefulWidget {
     required this.closeMotion,
     required this.interactiveMotion,
     required this.keyboardInset,
-    required this.initialMeasurementReady,
     required this.closing,
     required this.onTransitionSettled,
     required this.contentBuilder,
@@ -589,6 +665,7 @@ class _TrayMotionCoordinator extends StatefulWidget {
 
   final TrayController controller;
   final TrayGeometry geometry;
+  final bool geometryIsMeasured;
   final List<TrayPage<dynamic>> pages;
   final TrayPageTransition? transition;
   final Motion geometryMotion;
@@ -598,7 +675,6 @@ class _TrayMotionCoordinator extends StatefulWidget {
   final Motion closeMotion;
   final Motion interactiveMotion;
   final double keyboardInset;
-  final bool initialMeasurementReady;
   final bool closing;
   final ValueChanged<int> onTransitionSettled;
   final Widget Function(BuildContext, _TrayVisualState) contentBuilder;
@@ -619,6 +695,41 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   bool _dismissCompleted = false;
 
   double _dragOrigin = 0;
+  bool _receivedFirstMeasurement = false;
+  bool _firstGeometrySnapScheduled = false;
+  TrayGeometry? _pendingFirstGeometry;
+
+  void reportMeasuredGeometry(
+    TrayGeometry geometry, {
+    required bool firstMeasurement,
+  }) {
+    if (!mounted || widget.closing) return;
+    if (firstMeasurement ||
+        !_receivedFirstMeasurement ||
+        _firstGeometrySnapScheduled) {
+      _receivedFirstMeasurement = true;
+      _pendingFirstGeometry = geometry;
+      if (!_firstGeometrySnapScheduled) {
+        _firstGeometrySnapScheduled = true;
+        // Content and footer observers can report in either order during this
+        // layout. Apply the latest combined geometry after all layout callbacks.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _firstGeometrySnapScheduled = false;
+          final pendingGeometry = _pendingFirstGeometry;
+          _pendingFirstGeometry = null;
+          if (mounted && !widget.closing && pendingGeometry != null) {
+            _geometryMotion.value = pendingGeometry;
+          }
+        });
+      }
+      return;
+    }
+    _receivedFirstMeasurement = true;
+    if (_geometryMotion.value != geometry) {
+      _geometryMotion.motion = widget.geometryMotion;
+      _geometryMotion.animateTo(geometry);
+    }
+  }
 
   Listenable get _allMotions => Listenable.merge([
     _geometryMotion,
@@ -660,9 +771,9 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   void didUpdateWidget(covariant _TrayMotionCoordinator oldWidget) {
     super.didUpdateWidget(oldWidget);
     final geometryChanged = oldWidget.geometry != widget.geometry;
+    final pageSequenceChanged =
+        !_samePageSequence(oldWidget.pages, widget.pages);
     final transitionChanged = oldWidget.transition?.id != widget.transition?.id;
-    final openingStarted =
-        !oldWidget.initialMeasurementReady && widget.initialMeasurementReady;
     final closingStarted = !oldWidget.closing && widget.closing;
     if (closingStarted) {
       if (_presentationMotion.value <= 0.001) {
@@ -678,32 +789,17 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
     if (widget.closing) {
       return;
     }
-    if (!widget.initialMeasurementReady) {
-      if (geometryChanged) {
+    if (geometryChanged &&
+        _geometryMotion.value != widget.geometry &&
+        (!pageSequenceChanged || widget.geometryIsMeasured)) {
+      if (_receivedFirstMeasurement) {
+        _geometryMotion.motion = widget.geometryMotion;
+        _geometryMotion.animateTo(widget.geometry);
+      } else {
         _geometryMotion.value = widget.geometry;
       }
-      if (transitionChanged ||
-          !_samePageSequence(oldWidget.pages, widget.pages)) {
-        _syncPageMotions();
-      }
-      return;
     }
-    if (openingStarted) {
-      // The first measured size is the natural starting geometry, like the
-      // first onLayout in the reference. Only later size changes are animated.
-      _geometryMotion.value = widget.geometry;
-      if (transitionChanged ||
-          !_samePageSequence(oldWidget.pages, widget.pages)) {
-        _syncPageMotions();
-      }
-      return;
-    }
-    if (geometryChanged) {
-      _geometryMotion.motion = widget.geometryMotion;
-      _geometryMotion.animateTo(widget.geometry);
-    }
-    if (transitionChanged ||
-        !_samePageSequence(oldWidget.pages, widget.pages)) {
+    if (transitionChanged || pageSequenceChanged) {
       _syncPageMotions();
     }
   }
@@ -908,15 +1004,17 @@ class TraySizeObserver extends SingleChildRenderObjectWidget {
     super.key,
     required this.enabled,
     required this.onSizeChanged,
+    this.deferCallback = true,
     super.child,
   });
 
   final bool enabled;
   final ValueChanged<Size> onSizeChanged;
+  final bool deferCallback;
 
   @override
   RenderObject createRenderObject(BuildContext context) {
-    return RenderTraySizeObserver(enabled, onSizeChanged);
+    return RenderTraySizeObserver(enabled, onSizeChanged, deferCallback);
   }
 
   @override
@@ -927,25 +1025,36 @@ class TraySizeObserver extends SingleChildRenderObjectWidget {
     final wasEnabled = renderObject.enabled;
     renderObject.enabled = enabled;
     renderObject.onSizeChanged = onSizeChanged;
+    renderObject.deferCallback = deferCallback;
     if (!wasEnabled && enabled) {
-      renderObject.reportSize();
+      renderObject.resetReportedSize();
     }
   }
 }
 
 class RenderTraySizeObserver extends RenderProxyBox {
-  RenderTraySizeObserver(this.enabled, this.onSizeChanged);
+  RenderTraySizeObserver(this.enabled, this.onSizeChanged, this.deferCallback);
 
   bool enabled;
   ValueChanged<Size> onSizeChanged;
+  bool deferCallback;
   Size? _lastSize;
 
   void reportSize() {
+    if (!deferCallback) {
+      if (attached && enabled && hasSize) onSizeChanged(size);
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (attached && enabled) {
         onSizeChanged(size);
       }
     });
+  }
+
+  void resetReportedSize() {
+    _lastSize = null;
+    markNeedsLayout();
   }
 
   @override
