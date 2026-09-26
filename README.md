@@ -46,8 +46,10 @@ context.tray.close('saved');
   above 1000 px/s; otherwise it settles back with the gesture velocity.
 - `context.tray.setView` and `goBack` transition pages without pushing another
   route. The previous view remains available in the stack during the transition.
-- Motion is implemented through Motor. `TrayMotionTheme.family()` provides
-  the reference profiles, and `TrayMotionTheme` can be customized when needed.
+- One visual state keeps bounds, radius, scale, backdrop, keyboard/drag offset,
+  and page progress synchronized. Motor drives the state through independent
+  channels so each transition keeps the reference's spring or timing profile.
+  `TrayMotionTheme.family()` provides those profiles and can be customized.
 
 `TrayHeader` is an optional neutral layout helper; the package does not impose
 Material or Cupertino widgets, app colors, or typography on page content.

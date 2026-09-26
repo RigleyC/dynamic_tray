@@ -47,8 +47,8 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   final GlobalKey _surfaceKey = GlobalKey();
   final TraySharedElementRegistry _sharedElementRegistry =
       TraySharedElementRegistry();
-  final GlobalKey<_TrayVisualMotionBuilderState> _visualMotionKey =
-      GlobalKey<_TrayVisualMotionBuilderState>();
+  final GlobalKey<_TrayMotionCoordinatorState> _visualMotionKey =
+      GlobalKey<_TrayMotionCoordinatorState>();
   late final TrayRestorableSnapshot _restorableSnapshot =
       TrayRestorableSnapshot(widget.controller.restorationSnapshot);
   bool _applyingRestoration = false;
@@ -377,7 +377,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                   key: _surfaceKey,
                   fit: StackFit.expand,
                   children: [
-                    _TrayVisualMotionBuilder(
+                    _TrayMotionCoordinator(
                       key: _visualMotionKey,
                       controller: widget.controller,
                       geometry: geometry,
@@ -395,8 +395,8 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                           widget.controller.lifecycle == TrayLifecycle.closing,
                       onTransitionSettled:
                           widget.controller.completePageTransition,
-                      contentBuilder: (context, geometry, pageProgresses) {
-                        final rect = geometry.rect;
+                      contentBuilder: (context, visualState) {
+                        final rect = visualState.geometry.rect;
                         return Positioned.fill(
                           top: 36,
                           bottom: footer == null ? 24 : activeFooterHeight + 24,
@@ -414,7 +414,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                             pageWidgets: pageWidgets,
                             currentIndex: pages.indexOf(currentPage),
                             transition: transition,
-                            pageProgresses: pageProgresses,
+                            pageProgresses: visualState.pageProgresses,
                           ),
                         );
                       },
@@ -532,8 +532,8 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   }
 }
 
-class _TrayVisualMotionBuilder extends StatefulWidget {
-  const _TrayVisualMotionBuilder({
+class _TrayMotionCoordinator extends StatefulWidget {
+  const _TrayMotionCoordinator({
     super.key,
     required this.controller,
     required this.geometry,
@@ -567,20 +567,14 @@ class _TrayVisualMotionBuilder extends StatefulWidget {
   final bool initialMeasurementReady;
   final bool closing;
   final ValueChanged<int> onTransitionSettled;
-  final Widget Function(
-    BuildContext,
-    TrayGeometry,
-    Map<TrayPage<dynamic>, double>,
-  )
-  contentBuilder;
-  final Widget Function(BuildContext, _TrayVisualFrame, Widget) builder;
+  final Widget Function(BuildContext, _TrayVisualState) contentBuilder;
+  final Widget Function(BuildContext, _TrayVisualState, Widget) builder;
 
   @override
-  State<_TrayVisualMotionBuilder> createState() =>
-      _TrayVisualMotionBuilderState();
+  State<_TrayMotionCoordinator> createState() => _TrayMotionCoordinatorState();
 }
 
-class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
+class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
     with TickerProviderStateMixin {
   late final MotionController<TrayGeometry> _geometryMotion;
   late final SingleMotionController _presentationMotion;
@@ -627,7 +621,7 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
   }
 
   @override
-  void didUpdateWidget(covariant _TrayVisualMotionBuilder oldWidget) {
+  void didUpdateWidget(covariant _TrayMotionCoordinator oldWidget) {
     super.didUpdateWidget(oldWidget);
     final geometryChanged = oldWidget.geometry != widget.geometry;
     final transitionChanged = oldWidget.transition?.id != widget.transition?.id;
@@ -828,7 +822,7 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
           for (final entry in _pageMotions.entries)
             entry.key: entry.value.value,
         };
-        final frame = _TrayVisualFrame(
+        final visualState = _TrayVisualState(
           geometry: geometry,
           surfaceRect: projectedRect,
           surfaceScale: 0.94 + 0.06 * clampedProgress,
@@ -837,25 +831,23 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
               (clampedProgress * (1 - 0.6 * dragProgress))
                   .clamp(0.0, 1.0)
                   .toDouble(),
+          pageProgresses: pageProgresses,
         );
-        final content = widget.contentBuilder(
-          context,
-          geometry,
-          pageProgresses,
-        );
-        return widget.builder(context, frame, content);
+        final content = widget.contentBuilder(context, visualState);
+        return widget.builder(context, visualState, content);
       },
     );
   }
 }
 
-class _TrayVisualFrame {
-  const _TrayVisualFrame({
+class _TrayVisualState {
+  const _TrayVisualState({
     required this.geometry,
     required this.surfaceRect,
     required this.surfaceScale,
     required this.surfaceRadius,
     required this.backdropOpacity,
+    required this.pageProgresses,
   });
 
   final TrayGeometry geometry;
@@ -863,6 +855,7 @@ class _TrayVisualFrame {
   final double surfaceScale;
   final BorderRadius surfaceRadius;
   final double backdropOpacity;
+  final Map<TrayPage<dynamic>, double> pageProgresses;
 }
 
 class TraySizeObserver extends SingleChildRenderObjectWidget {
