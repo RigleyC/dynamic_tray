@@ -40,9 +40,9 @@ destination again reuses its page instead of adding another history entry.
 - The default surface follows the reference's 38 px
   rounded superellipse corners, 24 px inner page padding, and handle. The
   footer stays in a persistent slot whose actual height is measured for sizing.
-  The outer left, right, and bottom gaps are 8 logical px. The tray content
-  and footer stay above the system safe area, while the outer gap remains 8 px.
-  With the keyboard open, the tray sits 8 px above it. There is no default
+  The outer left, right, and bottom gaps are 8 logical px. Content and footer
+  use fixed 24 px bottom padding, regardless of the system safe area. With the
+  keyboard open, the tray sits 8 px above it. There is no default
   width cap; set `maxWidth` on the geometry resolver to opt into a centered
   width limit.
 - Opening uses the reference spring, 0.94-to-1 scale, and a 1000 px travel.

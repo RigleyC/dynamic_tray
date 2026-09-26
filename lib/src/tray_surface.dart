@@ -335,10 +335,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                         widget.footerBuilder?.call(context) ??
                         widget.footer;
             final activeFooterHeight = footer == null ? 0.0 : _footerHeight;
-            final innerBottomPadding =
-                mediaQuery.padding.bottom > 24
-                    ? mediaQuery.padding.bottom
-                    : 24.0;
+            const innerBottomPadding = 24.0;
             final viewportBottomGap = mediaQuery.viewInsets.bottom + 8.0;
             final layoutContext = TrayLayoutContext(
               size: constraints.biggest,

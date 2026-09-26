@@ -19,8 +19,9 @@ driven by `motor`.
 - Non-fullscreen trays default to 8 logical pixels of left, right, and bottom
   margin measured from the viewport edge (or keyboard edge when open). Their
   maximum height reserves the top safe area and keyboard inset. Content and
-  footer padding keep controls above the bottom system inset. Fullscreen remains
-  edge-to-edge, shortened only for an open keyboard.
+  footer use fixed 24 logical pixels of bottom padding without adding the bottom
+  system inset. Fullscreen remains edge-to-edge, shortened only for an open
+  keyboard.
 - `TraySurface` is the only initial renderer and uses `MotionBuilder<TrayGeometry>`
   with a package-owned converter so bounds and corner radius share one Motor
   target.
