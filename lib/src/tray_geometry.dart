@@ -78,11 +78,17 @@ class TrayLayoutContext {
     required this.size,
     required this.padding,
     required this.viewInsets,
+    this.displayCornerRadii,
   });
 
   final Size size;
   final EdgeInsets padding;
   final EdgeInsets viewInsets;
+
+  /// Device display corner radii in logical pixels, when available.
+  ///
+  /// Resolvers can use these to make surfaces concentric with the display.
+  final BorderRadius? displayCornerRadii;
 }
 
 abstract interface class TrayGeometryResolver {
@@ -105,6 +111,8 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
 
   /// Centered width limit. Infinite by default to preserve the side gaps.
   final double maxWidth;
+
+  /// Base radius for the top corners and fallback display geometry.
   final double radius;
 
   @override
@@ -130,6 +138,14 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
     final naturalHeight = contentSize.height.clamp(0.0, availableHeight);
     final height = naturalHeight;
     final safeHeight = height == 0 ? 1.0 : height;
+    final restsAtDisplayEdge = keyboardInset == 0;
+    final displayCorners =
+        context.displayCornerRadii ?? BorderRadius.circular(radius);
+
+    Radius insetFromDisplay(Radius radius) => Radius.elliptical(
+      (radius.x - horizontalMargin).clamp(0.0, double.infinity).toDouble(),
+      (radius.y - bottomMargin).clamp(0.0, double.infinity).toDouble(),
+    );
 
     return TrayGeometry(
       rect: Rect.fromLTWH(
@@ -138,7 +154,18 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
         width,
         safeHeight,
       ),
-      borderRadius: BorderRadius.circular(radius),
+      borderRadius: BorderRadius.only(
+        topLeft: Radius.circular(radius),
+        topRight: Radius.circular(radius),
+        bottomRight:
+            restsAtDisplayEdge
+                ? insetFromDisplay(displayCorners.bottomRight)
+                : Radius.circular(radius),
+        bottomLeft:
+            restsAtDisplayEdge
+                ? insetFromDisplay(displayCorners.bottomLeft)
+                : Radius.circular(radius),
+      ),
     );
   }
 }

@@ -37,8 +37,15 @@ destination again reuses its page instead of adding another history entry.
 - `TrayPageLayout.bounded` gives scrolling pages a finite viewport that fills
   the available safe height. Use it for a root `ListView` or
   `CustomScrollView`; the page owns its scrolling behavior.
-- The default surface follows the reference's 38 px
-  rounded superellipse corners, 24 px inner page padding, and handle. The
+- The default surface uses 38 px rounded superellipse corners at the top.
+  The bottom corners adapt to the device display: each radius is the display
+  corner radius minus the matching 8 px side and bottom insets, clamped at zero.
+  iOS values come from a model table; Android 12+ uses Flutter's per-corner
+  display metrics. Without device metrics, the 38 px base radius is used to
+  calculate the lower corners; iOS models missing from the table return zero.
+  When the keyboard lifts the tray from the display edge, it uses the base
+  radius instead.
+  The surface also keeps 24 px inner page padding and a handle. The
   footer stays in a persistent slot whose actual height is measured for sizing.
   The outer left, right, and bottom gaps are 8 logical px. Content and footer
   use fixed 24 px bottom padding, regardless of the system safe area. With the

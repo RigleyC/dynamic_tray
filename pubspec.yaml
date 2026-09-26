@@ -4,10 +4,11 @@ version: 0.1.0
 publish_to: none
 
 environment:
-  sdk: ">=3.7.0 <4.0.0"
-  flutter: ">=3.32.0"
+  sdk: ">=3.12.0 <4.0.0"
+  flutter: ">=3.44.0"
 
 dependencies:
+  corner_radius_plugin: ^0.1.1
   flutter:
     sdk: flutter
   motor: ^1.1.0

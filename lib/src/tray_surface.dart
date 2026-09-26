@@ -1,5 +1,8 @@
 import 'package:flutter/rendering.dart'
     show RenderBox, RenderProxyBox, ShapeBorderClipper;
+import 'package:corner_radius_plugin/corner_radius_plugin.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/widgets.dart';
 import 'package:motor/motor.dart';
 
@@ -40,7 +43,10 @@ class TraySurface extends StatefulWidget {
 }
 
 class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
+  static Future<BorderRadius>? _deviceCornerRadii;
+
   Size _contentSize = Size.zero;
+  BorderRadius? _displayCornerRadii;
   final Map<TrayPage<dynamic>, Size> _contentSizes = {};
   bool _hasInitialMeasurement = false;
   double _footerHeight = 0;
@@ -63,6 +69,31 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   void initState() {
     super.initState();
     widget.controller.addListener(_handleControllerChanged);
+    _loadDisplayCornerRadii();
+  }
+
+  Future<void> _loadDisplayCornerRadii() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
+      return;
+    }
+
+    try {
+      final radii = await (_deviceCornerRadii ??= _readDeviceCornerRadii());
+      if (!mounted) return;
+      setState(() => _displayCornerRadii = radii);
+    } on Object {
+      // Keep the default geometry if the host app has no plugin implementation.
+    }
+  }
+
+  static Future<BorderRadius> _readDeviceCornerRadii() async {
+    final screenRadius = await CornerRadiusPlugin.init();
+    return BorderRadius.only(
+      topLeft: Radius.circular(screenRadius.topLeft),
+      topRight: Radius.circular(screenRadius.topRight),
+      bottomLeft: Radius.circular(screenRadius.bottomLeft),
+      bottomRight: Radius.circular(screenRadius.bottomRight),
+    );
   }
 
   @override
@@ -402,6 +433,8 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
               size: constraints.biggest,
               padding: mediaQuery.padding,
               viewInsets: mediaQuery.viewInsets,
+              displayCornerRadii:
+                  _displayCornerRadii ?? mediaQuery.displayCornerRadii,
             );
             final boundedFallbackHeight =
                 (layoutContext.size.height -
