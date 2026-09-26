@@ -13,10 +13,10 @@ class TrayMotionTheme {
     required this.interactive,
   });
 
-  /// Motor motion for route entry.
+  /// Motor motion for the tray's presentation spring when opening.
   final Motion route;
 
-  /// Motor motion for route exit.
+  /// Motor motion for the tray's timed close.
   final Motion close;
 
   /// Motor motion for changes to the tray's bounds and corner radius.

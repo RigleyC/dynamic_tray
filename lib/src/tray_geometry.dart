@@ -34,10 +34,10 @@ class TrayGeometryMotionConverter extends MotionConverter<TrayGeometry> {
   @override
   List<double> normalize(TrayGeometry value) {
     return [
-      value.rect.left,
-      value.rect.top,
-      value.rect.right,
+      value.rect.center.dx,
       value.rect.bottom,
+      value.rect.width,
+      value.rect.height,
       value.borderRadius.topLeft.x,
       value.borderRadius.topLeft.y,
       value.borderRadius.topRight.x,
@@ -56,8 +56,15 @@ class TrayGeometryMotionConverter extends MotionConverter<TrayGeometry> {
       values[y].clamp(0.0, double.infinity).toDouble(),
     );
 
+    final width = values[2].clamp(0.0, double.infinity).toDouble();
+    final height = values[3].clamp(0.0, double.infinity).toDouble();
     return TrayGeometry(
-      rect: Rect.fromLTRB(values[0], values[1], values[2], values[3]),
+      rect: Rect.fromLTWH(
+        values[0] - width / 2,
+        values[1] - height,
+        width,
+        height,
+      ),
       borderRadius: BorderRadius.only(
         topLeft: safeRadius(4, 5),
         topRight: safeRadius(6, 7),
@@ -90,15 +97,17 @@ abstract interface class TrayGeometryResolver {
 
 class DefaultTrayGeometryResolver implements TrayGeometryResolver {
   const DefaultTrayGeometryResolver({
-    this.horizontalMargin = 8,
-    this.bottomMargin = 8,
+    this.horizontalMargin = 16,
+    this.bottomMargin = 0,
+    this.maxWidth = 360,
     this.expandedFraction = 0.72,
     this.fullscreenRadius = 0,
-    this.contentRadius = 28,
+    this.contentRadius = 38,
   });
 
   final double horizontalMargin;
   final double bottomMargin;
+  final double maxWidth;
   final double expandedFraction;
   final double fullscreenRadius;
   final double contentRadius;
@@ -109,27 +118,24 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
     TrayPresentation presentation,
     Size contentSize,
   ) {
-    final viewInsets = context.viewInsets;
     final safeTop = context.padding.top;
-    final bottomInset =
-        viewInsets.bottom > 0 ? viewInsets.bottom : context.padding.bottom;
-    final availableHeight =
-        (context.size.height - safeTop - bottomInset - bottomMargin).clamp(
-          0.0,
-          context.size.height,
-        );
-    final width = (context.size.width - horizontalMargin * 2).clamp(
+    final safeBottom =
+        context.padding.bottom.clamp(16.0, double.infinity).toDouble();
+    final bottomInset = safeBottom;
+    final availableHeight = (context.size.height -
+            safeTop -
+            bottomInset -
+            bottomMargin)
+        .clamp(0.0, context.size.height);
+    final availableWidth = (context.size.width - horizontalMargin * 2).clamp(
       0.0,
       context.size.width,
     );
+    final width = availableWidth.clamp(0.0, maxWidth).toDouble();
 
     if (presentation == TrayPresentation.fullscreen) {
-      final fullscreenHeight =
-          viewInsets.bottom > 0
-              ? context.size.height - viewInsets.bottom
-              : context.size.height;
       return TrayGeometry(
-        rect: Rect.fromLTWH(0, 0, context.size.width, fullscreenHeight),
+        rect: Rect.fromLTWH(0, 0, context.size.width, context.size.height),
         borderRadius: BorderRadius.circular(fullscreenRadius),
       );
     }
@@ -146,7 +152,7 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
 
     return TrayGeometry(
       rect: Rect.fromLTWH(
-        horizontalMargin,
+        (context.size.width - width) / 2,
         context.size.height - bottomInset - bottomMargin - safeHeight,
         width,
         safeHeight,

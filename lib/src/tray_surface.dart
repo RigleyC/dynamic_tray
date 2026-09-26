@@ -4,6 +4,7 @@ import 'package:motor/motor.dart';
 
 import 'tray_controller.dart';
 import 'tray_geometry.dart';
+import 'tray_handle.dart';
 import 'tray_motion_theme.dart';
 import 'tray_page.dart';
 import 'tray_presentation.dart';
@@ -21,11 +22,10 @@ class TraySurface extends StatefulWidget {
   const TraySurface({
     super.key,
     required this.controller,
-    required this.routeAnimation,
     required this.geometryResolver,
     required this.motionTheme,
-    required this.onInitialMeasurement,
     this.footer,
+    this.footerBuilder,
     this.surfaceColor,
     this.surfaceBuilder,
     required this.barrierColor,
@@ -34,11 +34,10 @@ class TraySurface extends StatefulWidget {
   });
 
   final TrayController controller;
-  final Animation<double> routeAnimation;
   final TrayGeometryResolver geometryResolver;
   final TrayMotionTheme motionTheme;
-  final VoidCallback onInitialMeasurement;
   final Widget? footer;
+  final WidgetBuilder? footerBuilder;
   final Color? surfaceColor;
   final TraySurfaceBuilder? surfaceBuilder;
   final Color barrierColor;
@@ -49,18 +48,18 @@ class TraySurface extends StatefulWidget {
   State<TraySurface> createState() => _TraySurfaceState();
 }
 
-class _TraySurfaceState extends State<TraySurface>
-    with TickerProviderStateMixin, RestorationMixin {
+class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   Size _contentSize = Size.zero;
-  double _footerHeight = 0;
   final Map<TrayPage<dynamic>, Size> _contentSizes = {};
+  final Set<TrayPage<dynamic>> _autoFullscreenPages = {};
   bool _hasInitialMeasurement = false;
-  Offset _dragOffset = Offset.zero;
   bool _isDragging = false;
+  double _dragTranslation = 0;
   final GlobalKey _surfaceKey = GlobalKey();
   final TraySharedElementRegistry _sharedElementRegistry =
       TraySharedElementRegistry();
-  late final MotionController<Offset> _dragMotion;
+  final GlobalKey<_TrayVisualMotionBuilderState> _visualMotionKey =
+      GlobalKey<_TrayVisualMotionBuilderState>();
   late final TrayRestorableSnapshot _restorableSnapshot =
       TrayRestorableSnapshot(widget.controller.restorationSnapshot);
   bool _applyingRestoration = false;
@@ -72,12 +71,6 @@ class _TraySurfaceState extends State<TraySurface>
   @override
   void initState() {
     super.initState();
-    _dragMotion = MotionController<Offset>(
-      motion: widget.motionTheme.interactive,
-      vsync: this,
-      converter: const OffsetMotionConverter(),
-      initialValue: Offset.zero,
-    );
     widget.controller.addListener(_handleControllerChanged);
   }
 
@@ -118,15 +111,11 @@ class _TraySurfaceState extends State<TraySurface>
       oldWidget.controller.removeListener(_handleControllerChanged);
       widget.controller.addListener(_handleControllerChanged);
     }
-    if (oldWidget.motionTheme.interactive != widget.motionTheme.interactive) {
-      _dragMotion.motion = widget.motionTheme.interactive;
-    }
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_handleControllerChanged);
-    _dragMotion.dispose();
     _sharedElementRegistry.dispose();
     super.dispose();
   }
@@ -166,26 +155,18 @@ class _TraySurfaceState extends State<TraySurface>
     }
     setState(() {
       _contentSizes[page] = size;
-      if (isCurrentPage || isOutgoingPage) {
+      if (isCurrentPage) {
         _contentSize = size;
       }
       if (isInitialMeasurement) {
         _hasInitialMeasurement = true;
       }
     });
-    if (isInitialMeasurement) {
-      widget.onInitialMeasurement();
-    }
-  }
-
-  void _updateFooterSize(Size size) {
-    if (!mounted || _footerHeight == size.height) {
-      return;
-    }
-    setState(() => _footerHeight = size.height);
   }
 
   void _startDrag(DragStartDetails details) {
+    _dragTranslation = 0;
+    _visualMotionKey.currentState?.beginDrag();
     setState(() {
       _isDragging = true;
     });
@@ -195,11 +176,16 @@ class _TraySurfaceState extends State<TraySurface>
     if (!_isDragging) {
       return;
     }
-    setState(() {
-      final nextDy = _dragOffset.dy + (details.primaryDelta ?? 0);
-      _dragOffset = Offset(0, nextDy.clamp(0.0, double.infinity));
-      _dragMotion.value = _dragOffset;
-    });
+    _dragTranslation += details.primaryDelta ?? 0;
+    _visualMotionKey.currentState?.dragTo(_dragTranslation);
+  }
+
+  void _cancelDrag() {
+    if (!_isDragging) {
+      return;
+    }
+    setState(() => _isDragging = false);
+    _visualMotionKey.currentState?.cancelDrag();
   }
 
   void _settleDrag(BuildContext context, [double velocity = 0]) {
@@ -207,64 +193,8 @@ class _TraySurfaceState extends State<TraySurface>
       return;
     }
 
-    const dismissOffset = 92.0;
-    final shouldDismiss = _dragOffset.dy > dismissOffset || velocity > 840;
-    final shouldPop = shouldDismiss && widget.controller.canPop;
-
-    if (shouldPop) {
-      // Keep this route/surface alive and reverse its page transition now.
-      // Animating the whole fullscreen page offscreen before popping makes
-      // the previous page appear to disappear and then reopen as a modal.
-      setState(() {
-        _isDragging = false;
-        _dragOffset = Offset.zero;
-      });
-      _dragMotion.animateTo(Offset.zero, withVelocity: Offset(0, velocity));
-      widget.controller.pop();
-      return;
-    }
-
-    if (shouldDismiss) {
-      // Begin the route reverse immediately so the barrier and surface leave
-      // together. Keep the released drag offset as the route animation's
-      // starting position instead of running a second, delayed spring.
-      setState(() => _isDragging = false);
-      widget.controller.dismiss();
-      return;
-    }
-
-    setState(() {
-      _isDragging = false;
-      _dragOffset = Offset.zero;
-    });
-    _dragMotion.animateTo(Offset.zero, withVelocity: Offset(0, velocity));
-  }
-
-  bool _handleScrollNotification(
-    BuildContext context,
-    ScrollNotification notification,
-  ) {
-    final canDrag =
-        widget.controller.canPop ||
-        widget.controller.presentation != TrayPresentation.fullscreen;
-    if (!canDrag || notification.depth != 0) {
-      return false;
-    }
-
-    if (notification is OverscrollNotification &&
-        notification.overscroll < 0 &&
-        notification.metrics.pixels <= notification.metrics.minScrollExtent) {
-      if (!_isDragging) {
-        _startDrag(DragStartDetails());
-      }
-      setState(() {
-        _dragOffset = Offset(0, _dragOffset.dy - notification.overscroll);
-        _dragMotion.value = _dragOffset;
-      });
-    } else if (notification is ScrollEndNotification && _isDragging) {
-      _settleDrag(context);
-    }
-    return false;
+    setState(() => _isDragging = false);
+    _visualMotionKey.currentState?.settleDrag(velocity);
   }
 
   Widget _buildPageLayer({
@@ -275,12 +205,19 @@ class _TraySurfaceState extends State<TraySurface>
     required double height,
     required bool measure,
     required bool visible,
+    required bool interactive,
     required double opacity,
     required Offset translation,
     required double scale,
     required TrayPageTransition? transition,
   }) {
-    Widget child = SizedBox(width: width, child: page);
+    Widget child = SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: page,
+      ),
+    );
     child = TraySharedElementScope(
       registry: _sharedElementRegistry,
       page: pageEntry,
@@ -293,11 +230,6 @@ class _TraySurfaceState extends State<TraySurface>
       onSizeChanged: (size) => _updateContentSize(pageEntry, size),
       child: child,
     );
-    child = NotificationListener<ScrollNotification>(
-      onNotification:
-          (notification) => _handleScrollNotification(context, notification),
-      child: child,
-    );
     child =
         pageEntry.layout == TrayPageLayout.bounded
             ? SizedBox(width: width, height: height, child: child)
@@ -305,12 +237,15 @@ class _TraySurfaceState extends State<TraySurface>
 
     final layer = Offstage(
       offstage: !visible,
-      child: Opacity(
-        opacity: opacity.clamp(0.0, 1.0).toDouble(),
-        child: Transform.scale(
-          scale: scale,
-          alignment: Alignment.center,
-          child: Transform.translate(offset: translation, child: child),
+      child: IgnorePointer(
+        ignoring: !interactive,
+        child: Opacity(
+          opacity: opacity.clamp(0.0, 1.0).toDouble(),
+          child: Transform.scale(
+            scale: scale,
+            alignment: Alignment.center,
+            child: Transform.translate(offset: translation, child: child),
+          ),
         ),
       ),
     );
@@ -326,96 +261,42 @@ class _TraySurfaceState extends State<TraySurface>
     required List<Widget> pageWidgets,
     required int currentIndex,
     required TrayPageTransition? transition,
-    required double pageProgress,
-    required double contentOpacity,
-    required bool motionIsAnimating,
+    required Map<TrayPage<dynamic>, double> pageProgresses,
   }) {
     final outgoingIndex =
         transition == null ? -1 : pages.indexOf(transition.outgoing);
-    final outgoingWidget =
-        transition == null || outgoingIndex >= 0
-            ? null
-            : KeyedSubtree(
-              key: ObjectKey(transition.outgoing),
-              child: transition.outgoing.builder(context),
-            );
-
-    List<Widget> buildLayers(double progress) {
-      final layers = <Widget>[];
-      final isPush = transition?.isPush ?? true;
-      final incomingProgress = isPush ? progress : 1 - progress;
-      final outgoingProgress = isPush ? 1 - progress : progress;
-      for (var index = 0; index < pageWidgets.length; index++) {
-        final isCurrent = index == currentIndex;
-        final isOutgoing = index == outgoingIndex;
-        final isVisible = isCurrent || isOutgoing;
-        final opacity =
-            transition == null
-                ? (isCurrent ? contentOpacity : 0.0)
-                : isCurrent
-                ? incomingProgress * contentOpacity
-                : isOutgoing
-                ? outgoingProgress * contentOpacity
-                : 0.0;
-        final translation = Offset.zero;
-        final scale =
-            transition == null
-                ? 1.0
-                : 0.96 +
-                    0.04 * (isCurrent ? incomingProgress : outgoingProgress);
-
-        layers.add(
-          _buildPageLayer(
-            context: context,
-            page: pageWidgets[index],
-            pageEntry: pages[index],
-            width: rect.width,
-            height: rect.height,
-            measure: isCurrent && !motionIsAnimating,
-            visible: isVisible,
-            opacity: opacity,
-            translation: translation,
-            scale: scale,
-            transition: transition,
-          ),
-        );
-      }
-
-      if (outgoingWidget != null) {
-        layers.add(
-          _buildPageLayer(
-            context: context,
-            page: outgoingWidget,
-            pageEntry: transition!.outgoing,
-            width: rect.width,
-            height: rect.height,
-            measure: false,
-            visible: true,
-            opacity: outgoingProgress * contentOpacity,
-            translation: Offset.zero,
-            scale: 0.96 + 0.04 * outgoingProgress,
-            transition: transition,
-          ),
-        );
-      }
-      return layers;
+    final layers = <Widget>[];
+    for (var index = 0; index < pageWidgets.length; index++) {
+      final page = pages[index];
+      final isCurrent = index == currentIndex;
+      final isOutgoing = index == outgoingIndex;
+      final progress = (pageProgresses[page] ?? 0).clamp(0.0, 1.0).toDouble();
+      layers.add(
+        _buildPageLayer(
+          context: context,
+          page: pageWidgets[index],
+          pageEntry: page,
+          width: rect.width,
+          height: rect.height,
+          measure: isCurrent,
+          visible: isCurrent || isOutgoing || progress > 0,
+          interactive: isCurrent,
+          opacity: progress,
+          translation: Offset.zero,
+          scale: 0.96 + 0.04 * progress,
+          transition: transition,
+        ),
+      );
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: buildLayers(pageProgress.clamp(0.0, 1.0).toDouble()),
-    );
+    return Stack(fit: StackFit.expand, children: layers);
   }
 
   void _handleBarrierTap() {
     if (!widget.barrierDismissible) {
       return;
     }
-    if (widget.controller.canPop) {
-      widget.controller.pop();
-    } else {
-      widget.controller.dismiss();
-    }
+    widget.controller.close();
   }
 
   List<Widget> _buildSharedElementFlights(
@@ -447,34 +328,74 @@ class _TraySurfaceState extends State<TraySurface>
         return LayoutBuilder(
           builder: (context, constraints) {
             final mediaQuery = MediaQuery.of(context);
-            final layoutContext = TrayLayoutContext(
-              size: constraints.biggest,
-              padding: mediaQuery.padding,
-              viewInsets: mediaQuery.viewInsets,
-            );
-            final currentPage = widget.controller.pages.last;
+            final currentPage = widget.controller.currentPage;
+            const estimatedFooterHeight = 65.0;
             final footer =
                 currentPage.hideFooter
                     ? null
-                    : currentPage.footer ?? widget.footer;
-            final footerHeight = footer == null ? 0.0 : _footerHeight;
-            final bottomInset =
-                mediaQuery.viewInsets.bottom > 0
-                    ? mediaQuery.viewInsets.bottom
-                    : mediaQuery.padding.bottom;
+                    : currentPage.footerBuilder?.call(context) ??
+                        currentPage.footer ??
+                        widget.footerBuilder?.call(context) ??
+                        widget.footer;
+            final activeFooterHeight =
+                footer == null ? 0.0 : estimatedFooterHeight;
+            final safeBottom =
+                mediaQuery.padding.bottom
+                    .clamp(16.0, double.infinity)
+                    .toDouble();
+            final availableHeight =
+                (constraints.biggest.height -
+                        mediaQuery.padding.top -
+                        safeBottom)
+                    .clamp(0.0, constraints.biggest.height)
+                    .toDouble();
+            final resolver = widget.geometryResolver;
+            final expandedFraction =
+                resolver is DefaultTrayGeometryResolver
+                    ? resolver.expandedFraction
+                    : 0.72;
+            final activePageMeasuredHeight = _contentSizes[currentPage]?.height;
+            final measuredPageHeight =
+                activePageMeasuredHeight ?? _contentSize.height;
+            final measuredTrayHeight =
+                measuredPageHeight + activeFooterHeight + 60;
+            final exceedsCompactLimit =
+                currentPage.layout == TrayPageLayout.intrinsic &&
+                activePageMeasuredHeight != null &&
+                activePageMeasuredHeight > 0 &&
+                measuredTrayHeight > availableHeight * expandedFraction;
+            if (exceedsCompactLimit) {
+              _autoFullscreenPages.add(currentPage);
+            }
+            final growsToFullscreen = _autoFullscreenPages.contains(
+              currentPage,
+            );
+            final effectivePresentation =
+                growsToFullscreen
+                    ? TrayPresentation.fullscreen
+                    : widget.controller.presentation;
+            final followsKeyboardInset =
+                resolver is DefaultTrayGeometryResolver;
+            final layoutContext = TrayLayoutContext(
+              size: constraints.biggest,
+              padding: mediaQuery.padding,
+              viewInsets:
+                  followsKeyboardInset
+                      ? EdgeInsets.zero
+                      : mediaQuery.viewInsets,
+            );
             var boundedFallbackHeight =
                 (layoutContext.size.height -
                         mediaQuery.padding.top -
-                        bottomInset)
+                        safeBottom)
                     .clamp(0.0, layoutContext.size.height)
                     .toDouble() *
                 0.72;
-            final resolver = widget.geometryResolver;
             if (resolver is DefaultTrayGeometryResolver) {
               boundedFallbackHeight =
                   (layoutContext.size.height -
                           mediaQuery.padding.top -
-                          bottomInset)
+                          safeBottom)
                       .clamp(0.0, layoutContext.size.height)
                       .toDouble() *
                   resolver.expandedFraction;
@@ -488,14 +409,20 @@ class _TraySurfaceState extends State<TraySurface>
                     : _contentSizes[currentPage] ?? _contentSize;
             final contentSize = Size(
               measuredContentSize.width,
-              measuredContentSize.height + footerHeight,
+              measuredContentSize.height + activeFooterHeight + 60,
             );
             final geometry = widget.geometryResolver.resolve(
               layoutContext,
-              widget.controller.presentation,
+              effectivePresentation,
               contentSize,
             );
-            final pages = widget.controller.pages;
+            final transition = widget.controller.transition;
+            final pages = [
+              ...widget.controller.pages,
+              if (transition != null &&
+                  !widget.controller.pages.contains(transition.outgoing))
+                transition.outgoing,
+            ];
             final pageWidgets = [
               for (final page in pages)
                 KeyedSubtree(
@@ -507,60 +434,61 @@ class _TraySurfaceState extends State<TraySurface>
             return ListenableBuilder(
               listenable: _sharedElementRegistry,
               builder: (context, _) {
-                final transition = widget.controller.transition;
                 return Stack(
                   key: _surfaceKey,
                   fit: StackFit.expand,
                   children: [
                     _TrayVisualMotionBuilder(
+                      key: _visualMotionKey,
+                      controller: widget.controller,
                       geometry: geometry,
+                      pages: pages,
                       transition: transition,
                       geometryMotion: widget.motionTheme.geometry,
                       effectsMotion: widget.motionTheme.effects,
-                      presentation: widget.controller.presentation,
-                      routeAnimation: widget.routeAnimation,
-                      dragMotion: _dragMotion,
-                      viewportSize: layoutContext.size,
+                      routeMotion: widget.motionTheme.route,
+                      closeMotion: widget.motionTheme.close,
+                      interactiveMotion: widget.motionTheme.interactive,
+                      presentation: effectivePresentation,
                       keyboardInset: mediaQuery.viewInsets.bottom,
-                      geometryResolver: widget.geometryResolver,
-                      active:
-                          widget.controller.lifecycle != TrayLifecycle.opening,
+                      followsKeyboardInset: followsKeyboardInset,
+                      keyboardFullscreenStartHeight:
+                          resolver is DefaultTrayGeometryResolver
+                              ? (layoutContext.size.height -
+                                      mediaQuery.padding.top -
+                                      safeBottom) *
+                                  resolver.expandedFraction
+                              : layoutContext.size.height,
+                      keyboardFullscreenEndHeight: layoutContext.size.height,
+                      initialMeasurementReady: _hasInitialMeasurement,
+                      closing:
+                          widget.controller.lifecycle == TrayLifecycle.closing,
                       onTransitionSettled:
                           widget.controller.completePageTransition,
-                      contentBuilder: (
-                        context,
-                        visualState,
-                        motionIsAnimating,
-                      ) {
-                        final rect = visualState.geometry.rect;
+                      contentBuilder: (context, geometry, pageProgresses) {
+                        final rect = geometry.rect;
                         return Positioned.fill(
-                          bottom: footer == null ? 0 : footerHeight,
+                          top: 36,
+                          bottom: activeFooterHeight + 24,
                           child: _buildContent(
                             context: context,
                             rect: Rect.fromLTWH(
                               0,
                               0,
                               rect.width,
-                              (rect.height - footerHeight)
+                              (rect.height - activeFooterHeight - 60)
                                   .clamp(0.0, rect.height)
                                   .toDouble(),
                             ),
                             pages: pages,
                             pageWidgets: pageWidgets,
-                            currentIndex: pageWidgets.length - 1,
+                            currentIndex: pages.indexOf(currentPage),
                             transition: transition,
-                            pageProgress: visualState.pageProgress,
-                            contentOpacity: visualState.contentOpacity,
-                            motionIsAnimating: motionIsAnimating,
+                            pageProgresses: pageProgresses,
                           ),
                         );
                       },
-                      builder: (
-                        context,
-                        visualState,
-                        motionIsAnimating,
-                        content,
-                      ) {
+                      builder: (context, visualState, content) {
                         final surfaceRadius = visualState.surfaceRadius;
                         return Stack(
                           fit: StackFit.expand,
@@ -568,138 +496,104 @@ class _TraySurfaceState extends State<TraySurface>
                             Positioned.fill(
                               child: Opacity(
                                 opacity: visualState.backdropOpacity,
-                                child:
-                                    widget.barrierDismissible
-                                        ? Semantics(
-                                          label: 'Dismiss',
-                                          button: true,
-                                          onTap: _handleBarrierTap,
-                                          child: ExcludeSemantics(
-                                            child: GestureDetector(
-                                              behavior: HitTestBehavior.opaque,
-                                              onTap: _handleBarrierTap,
-                                              child: ColoredBox(
-                                                color: widget.barrierColor,
-                                              ),
-                                            ),
-                                          ),
-                                        )
-                                        : IgnorePointer(
-                                          child: ColoredBox(
-                                            color: widget.barrierColor,
-                                          ),
-                                        ),
+                                child: Semantics(
+                                  label:
+                                      widget.barrierDismissible
+                                          ? 'Dismiss'
+                                          : 'Modal barrier',
+                                  button: widget.barrierDismissible,
+                                  onTap:
+                                      widget.barrierDismissible
+                                          ? _handleBarrierTap
+                                          : null,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap:
+                                        widget.barrierDismissible
+                                            ? _handleBarrierTap
+                                            : () {},
+                                    child: ColoredBox(
+                                      color: widget.barrierColor,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                             Positioned.fromRect(
                               rect: visualState.surfaceRect,
                               child: Transform.scale(
                                 scale: visualState.surfaceScale,
-                                child: Transform.translate(
-                                  offset: visualState.dragOffset,
-                                  child: Builder(
-                                    builder: (context) {
-                                      final rect = visualState.geometry.rect;
-                                      final canDrag =
-                                          widget.controller.canPop ||
-                                          widget.controller.presentation !=
-                                              TrayPresentation.fullscreen;
-                                      final surface = DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          color:
-                                              widget.surfaceColor ??
-                                              (widget.surfaceBuilder == null
-                                                  ? const Color(0xFFFFFFFF)
-                                                  : const Color(0x00000000)),
-                                          borderRadius: surfaceRadius,
-                                          boxShadow: const [
-                                            BoxShadow(
-                                              color: Color(0x26000000),
-                                              blurRadius: 24,
-                                              offset: Offset(0, 8),
+                                child: Builder(
+                                  builder: (context) {
+                                    const canDrag = true;
+                                    final surface = DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        color:
+                                            widget.surfaceColor ??
+                                            (widget.surfaceBuilder == null
+                                                ? const Color(0xFF141414)
+                                                : const Color(0x00000000)),
+                                        borderRadius: surfaceRadius,
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: surfaceRadius,
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            Positioned.fill(
+                                              child: Stack(children: [content]),
                                             ),
-                                          ],
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: surfaceRadius,
-                                          child: Stack(
-                                            fit: StackFit.expand,
-                                            children: [
-                                              Positioned.fill(
-                                                child: Opacity(
-                                                  opacity:
-                                                      visualState.routeProgress,
-                                                  child: Stack(
-                                                    children: [content],
-                                                  ),
-                                                ),
-                                              ),
+                                            if (footer != null)
                                               Positioned(
+                                                bottom: 24,
+                                                left: 24,
+                                                right: 24,
+                                                child: footer,
+                                              ),
+                                            if (canDrag)
+                                              Positioned(
+                                                top: 8,
                                                 left: 0,
                                                 right: 0,
-                                                bottom: 0,
-                                                child: TraySizeObserver(
-                                                  enabled: footer != null,
-                                                  onSizeChanged:
-                                                      _updateFooterSize,
-                                                  child: SizedBox(
-                                                    width: rect.width,
-                                                    child:
-                                                        footer ??
-                                                        const SizedBox.shrink(),
+                                                height: 44,
+                                                child: GestureDetector(
+                                                  behavior:
+                                                      HitTestBehavior.opaque,
+                                                  onVerticalDragStart:
+                                                      _startDrag,
+                                                  onVerticalDragUpdate:
+                                                      _updateDrag,
+                                                  onVerticalDragEnd:
+                                                      (details) => _settleDrag(
+                                                        context,
+                                                        details.primaryVelocity ??
+                                                            0,
+                                                      ),
+                                                  onVerticalDragCancel:
+                                                      _cancelDrag,
+                                                  child: const Align(
+                                                    alignment:
+                                                        Alignment.topCenter,
+                                                    child: Padding(
+                                                      padding: EdgeInsets.only(
+                                                        top: 8,
+                                                      ),
+                                                      child: TrayHandle(),
+                                                    ),
                                                   ),
                                                 ),
                                               ),
-                                              if (canDrag)
-                                                Positioned(
-                                                  top: 0,
-                                                  left: (rect.width - 64) / 2,
-                                                  width: 64,
-                                                  height: 32,
-                                                  child: GestureDetector(
-                                                    behavior:
-                                                        HitTestBehavior.opaque,
-                                                    onVerticalDragStart:
-                                                        _startDrag,
-                                                    onVerticalDragUpdate:
-                                                        _updateDrag,
-                                                    onVerticalDragEnd:
-                                                        (
-                                                          details,
-                                                        ) => _settleDrag(
-                                                          context,
-                                                          details.primaryVelocity ??
-                                                              0,
-                                                        ),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
+                                          ],
                                         ),
-                                      );
-                                      return GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        onVerticalDragStart:
-                                            canDrag ? _startDrag : null,
-                                        onVerticalDragUpdate:
-                                            canDrag ? _updateDrag : null,
-                                        onVerticalDragEnd:
-                                            canDrag
-                                                ? (details) => _settleDrag(
-                                                  context,
-                                                  details.primaryVelocity ?? 0,
-                                                )
-                                                : null,
-                                        child:
-                                            widget.surfaceBuilder?.call(
-                                              context,
-                                              surfaceRadius,
-                                              surface,
-                                            ) ??
-                                            surface,
-                                      );
-                                    },
-                                  ),
+                                      ),
+                                    );
+                                    return widget.surfaceBuilder?.call(
+                                          context,
+                                          surfaceRadius,
+                                          surface,
+                                        ) ??
+                                        surface;
+                                  },
                                 ),
                               ),
                             ),
@@ -721,36 +615,52 @@ class _TraySurfaceState extends State<TraySurface>
 
 class _TrayVisualMotionBuilder extends StatefulWidget {
   const _TrayVisualMotionBuilder({
+    super.key,
+    required this.controller,
     required this.geometry,
+    required this.pages,
     required this.transition,
     required this.geometryMotion,
     required this.effectsMotion,
+    required this.routeMotion,
+    required this.closeMotion,
+    required this.interactiveMotion,
     required this.presentation,
-    required this.routeAnimation,
-    required this.dragMotion,
-    required this.viewportSize,
     required this.keyboardInset,
-    required this.geometryResolver,
-    required this.active,
+    required this.followsKeyboardInset,
+    required this.keyboardFullscreenStartHeight,
+    required this.keyboardFullscreenEndHeight,
+    required this.initialMeasurementReady,
+    required this.closing,
     required this.onTransitionSettled,
     required this.contentBuilder,
     required this.builder,
   });
 
+  final TrayController controller;
   final TrayGeometry geometry;
+  final List<TrayPage<dynamic>> pages;
   final TrayPageTransition? transition;
   final Motion geometryMotion;
   final Motion effectsMotion;
+  final Motion routeMotion;
+  final Motion closeMotion;
+  final Motion interactiveMotion;
   final TrayPresentation presentation;
-  final Animation<double> routeAnimation;
-  final MotionController<Offset> dragMotion;
-  final Size viewportSize;
   final double keyboardInset;
-  final TrayGeometryResolver geometryResolver;
-  final bool active;
+  final bool followsKeyboardInset;
+  final double keyboardFullscreenStartHeight;
+  final double keyboardFullscreenEndHeight;
+  final bool initialMeasurementReady;
+  final bool closing;
   final ValueChanged<int> onTransitionSettled;
-  final Widget Function(BuildContext, _TrayVisualState, bool) contentBuilder;
-  final Widget Function(BuildContext, _TrayVisualFrame, bool, Widget) builder;
+  final Widget Function(
+    BuildContext,
+    TrayGeometry,
+    Map<TrayPage<dynamic>, double>,
+  )
+  contentBuilder;
+  final Widget Function(BuildContext, _TrayVisualFrame, Widget) builder;
 
   @override
   State<_TrayVisualMotionBuilder> createState() =>
@@ -759,171 +669,312 @@ class _TrayVisualMotionBuilder extends StatefulWidget {
 
 class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
     with TickerProviderStateMixin {
-  late final MotionController<_TrayVisualState> _motion;
+  late final MotionController<TrayGeometry> _geometryMotion;
+  late final SingleMotionController _presentationMotion;
+  late final SingleMotionController _backdropMotion;
+  late final SingleMotionController _dragMotion;
+  final Map<TrayPage<dynamic>, SingleMotionController> _pageMotions = {};
+  final Map<TrayPage<dynamic>, double> _pageTargets = {};
   int? _transitionId;
-  final _TrayVisualStateConverter _converter =
-      const _TrayVisualStateConverter();
+  bool _dismissCompleted = false;
 
-  _TrayVisualState _targetFor(_TrayVisualMotionBuilder widget) {
-    return _TrayVisualState(
-      geometry: widget.geometry,
-      pageProgress:
-          widget.transition == null || widget.transition!.isPush ? 1 : 0,
-      contentOpacity: 1,
-      backdropFactor:
-          widget.presentation == TrayPresentation.fullscreen ? 0 : 1,
-    );
-  }
+  double _dragOrigin = 0;
 
-  List<Motion> _motions() => [
-    for (var i = 0; i < 12; i++) widget.geometryMotion,
-    widget.effectsMotion,
-    widget.effectsMotion,
-    widget.effectsMotion,
-  ];
+  double get _backdropTarget =>
+      widget.presentation == TrayPresentation.fullscreen ? 0 : 1;
+
+  Listenable get _allMotions => Listenable.merge([
+    _geometryMotion,
+    _presentationMotion,
+    _backdropMotion,
+    _dragMotion,
+    ..._pageMotions.values,
+  ]);
 
   @override
   void initState() {
     super.initState();
     _transitionId = widget.transition?.id;
-    _motion = MotionController<_TrayVisualState>.motionPerDimension(
-      motionPerDimension: _motions(),
+    _geometryMotion = MotionController<TrayGeometry>(
+      motion: widget.geometryMotion,
       vsync: this,
-      converter: _converter,
-      initialValue: _targetFor(widget),
-    )..addStatusListener(_handleStatus);
+      converter: const TrayGeometryMotionConverter(),
+      initialValue: widget.geometry,
+    );
+    _presentationMotion = SingleMotionController(
+      motion: widget.routeMotion,
+      vsync: this,
+      initialValue: 0,
+    )..addStatusListener(_handlePresentationStatus);
+    _backdropMotion = SingleMotionController(
+      motion: widget.effectsMotion,
+      vsync: this,
+      initialValue: _backdropTarget,
+    );
+    _dragMotion = SingleMotionController(
+      motion: widget.interactiveMotion,
+      vsync: this,
+    );
+    _syncPageMotions();
+    if (widget.initialMeasurementReady && !widget.closing) {
+      _presentationMotion.animateTo(1);
+    } else if (widget.closing) {
+      _completeDismissAfterFrame();
+    }
   }
 
   @override
   void didUpdateWidget(covariant _TrayVisualMotionBuilder oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _motion.motionPerDimension = _motions();
-
-    final target = _targetFor(widget);
     final geometryChanged = oldWidget.geometry != widget.geometry;
     final backdropChanged = oldWidget.presentation != widget.presentation;
-    final keyboardChanged = oldWidget.keyboardInset != widget.keyboardInset;
     final transitionChanged = oldWidget.transition?.id != widget.transition?.id;
+    final openingStarted =
+        !oldWidget.initialMeasurementReady && widget.initialMeasurementReady;
+    final closingStarted = !oldWidget.closing && widget.closing;
+    if (closingStarted) {
+      if (_presentationMotion.value <= 0.001) {
+        _completeDismissAfterFrame();
+      } else {
+        _presentationMotion.motion = widget.closeMotion;
+        _presentationMotion.animateTo(0);
+      }
+      return;
+    }
+    if (!widget.initialMeasurementReady) {
+      if (geometryChanged) {
+        _geometryMotion.value = widget.geometry;
+      }
+      if (transitionChanged ||
+          !_samePageSequence(oldWidget.pages, widget.pages)) {
+        _syncPageMotions();
+      }
+      return;
+    }
+    if (openingStarted) {
+      _geometryMotion.value = widget.geometry;
+      if (backdropChanged) _backdropMotion.value = _backdropTarget;
+      if (transitionChanged ||
+          !_samePageSequence(oldWidget.pages, widget.pages)) {
+        _syncPageMotions();
+      }
+      _presentationMotion.motion = widget.routeMotion;
+      _presentationMotion.animateTo(1);
+      return;
+    }
+    if (geometryChanged) {
+      _geometryMotion.motion = widget.geometryMotion;
+      _geometryMotion.animateTo(widget.geometry);
+    }
+    if (backdropChanged) {
+      _backdropMotion.motion = widget.effectsMotion;
+      _backdropMotion.animateTo(_backdropTarget);
+    }
+    if (transitionChanged ||
+        !_samePageSequence(oldWidget.pages, widget.pages)) {
+      _syncPageMotions();
+    }
+  }
+
+  bool _samePageSequence(
+    List<TrayPage<dynamic>> first,
+    List<TrayPage<dynamic>> second,
+  ) {
+    if (identical(first, second)) return true;
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (!identical(first[index], second[index])) return false;
+    }
+    return true;
+  }
+
+  void _handlePresentationStatus(AnimationStatus status) {
+    final reachedZero =
+        status == AnimationStatus.dismissed &&
+        _presentationMotion.value <= 0.001;
+    if ((status != AnimationStatus.completed && !reachedZero) || !mounted) {
+      return;
+    }
+    if (widget.closing && _presentationMotion.value <= 0.001) {
+      _completeDismissAfterFrame();
+      return;
+    }
+    if (_presentationMotion.value >= 0.999) {
+      widget.controller.markOpen();
+    }
+  }
+
+  void _completeDismissAfterFrame() {
+    if (_dismissCompleted) return;
+    _dismissCompleted = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.controller.completeDismissAnimation();
+    });
+  }
+
+  void _syncPageMotions() {
+    final retainedPages = <TrayPage<dynamic>>{
+      ...widget.pages,
+      if (widget.transition != null) widget.transition!.outgoing,
+    };
+    for (final page in retainedPages) {
+      _pageMotions.putIfAbsent(page, () {
+        _pageTargets[page] = 0;
+        return SingleMotionController(
+          motion: widget.effectsMotion,
+          vsync: this,
+          initialValue: 0,
+        )..addStatusListener(_handlePageMotionStatus);
+      });
+    }
+    for (final page in _pageMotions.keys.toList()) {
+      if (!retainedPages.contains(page)) {
+        _pageTargets.remove(page);
+        _pageMotions.remove(page)?.dispose();
+      }
+    }
     _transitionId = widget.transition?.id;
-
-    if (!widget.active) {
-      _motion.value = target;
-      return;
+    for (final entry in _pageMotions.entries) {
+      final target =
+          identical(entry.key, widget.controller.currentPage) ? 1.0 : 0.0;
+      if (_pageTargets[entry.key] == target) {
+        continue;
+      }
+      _pageTargets[entry.key] = target;
+      if ((entry.value.value - target).abs() < 0.001 &&
+          !entry.value.isAnimating) {
+        continue;
+      }
+      if (entry.value.motion != widget.effectsMotion) {
+        entry.value.motion = widget.effectsMotion;
+      }
+      entry.value.animateTo(target);
     }
-    if (keyboardChanged) {
-      // The OS already animates viewInsets. Following each reported inset
-      // directly avoids adding a second spring behind the keyboard.
-      _motion.value = _motion.value.copyWith(geometry: target.geometry);
-      if (!transitionChanged && !backdropChanged) return;
-    }
-    if (widget.transition == null &&
-        transitionChanged &&
-        !geometryChanged &&
-        !backdropChanged) {
-      _motion.value = target;
-      return;
-    }
-    if (!geometryChanged && !transitionChanged && !backdropChanged) {
-      return;
-    }
-
-    final current = _motion.value;
-    final currentVelocity = _motion.velocity;
-    final start = current.copyWith(
-      pageProgress:
-          transitionChanged && widget.transition != null
-              ? (widget.transition!.isPush ? 0 : 1)
-              : widget.transition == null
-              ? target.pageProgress
-              : current.pageProgress,
-      contentOpacity: geometryChanged ? 0.88 : current.contentOpacity,
-    );
-    final velocity = currentVelocity.copyWith(
-      pageProgress:
-          transitionChanged || widget.transition == null
-              ? 0
-              : currentVelocity.pageProgress,
-      contentOpacity: geometryChanged ? 0 : currentVelocity.contentOpacity,
-    );
-    _motion.animateTo(target, from: start, withVelocity: velocity);
+    _tryCompletePageTransition();
   }
 
-  void _handleStatus(AnimationStatus status) {
-    if (status != AnimationStatus.completed || !mounted) {
-      return;
+  void _handlePageMotionStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed ||
+        status == AnimationStatus.dismissed) {
+      _tryCompletePageTransition();
     }
+  }
+
+  void _tryCompletePageTransition() {
     final transitionId = _transitionId;
-    if (transitionId != null) {
-      widget.onTransitionSettled(transitionId);
+    if (transitionId != null &&
+        _pageMotions.values.every((motion) => !motion.isAnimating)) {
+      _transitionId = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onTransitionSettled(transitionId);
+      });
     }
   }
 
-  BorderRadius _surfaceRadius(TrayGeometry geometry) {
-    final resolver = widget.geometryResolver;
-    if (resolver is! DefaultTrayGeometryResolver ||
-        resolver.horizontalMargin <= 0) {
-      return geometry.borderRadius;
+  void beginDrag() {
+    _dragOrigin = _dragMotion.value;
+    _dragMotion.stop(canceled: true);
+  }
+
+  void dragTo(double translationY) {
+    _dragMotion.value =
+        (_dragOrigin + translationY).clamp(0.0, double.infinity).toDouble();
+  }
+
+  void settleDrag(double velocityY) {
+    if (_dragMotion.value > 110 || velocityY > 1000) {
+      if (widget.controller.canPop &&
+          widget.presentation == TrayPresentation.fullscreen) {
+        _dragMotion.motion = widget.interactiveMotion;
+        _dragMotion.animateTo(0, withVelocity: velocityY);
+        widget.controller.goBack();
+      } else {
+        widget.controller.dismiss();
+      }
+      return;
     }
-    final inset = (widget.viewportSize.width - geometry.rect.width) / 2;
-    final fraction = (inset / resolver.horizontalMargin).clamp(0.0, 1.0);
-    final radius =
-        resolver.fullscreenRadius +
-        (resolver.contentRadius - resolver.fullscreenRadius) * fraction;
-    return BorderRadius.circular(radius);
+    _dragMotion.motion = widget.interactiveMotion;
+    _dragMotion.animateTo(0, withVelocity: velocityY);
+  }
+
+  void cancelDrag() {
+    _dragMotion.motion = widget.interactiveMotion;
+    _dragMotion.animateTo(0);
   }
 
   @override
   void dispose() {
-    _motion
-      ..removeStatusListener(_handleStatus)
-      ..dispose();
+    _geometryMotion.dispose();
+    _presentationMotion.dispose();
+    _backdropMotion.dispose();
+    _dragMotion.dispose();
+    for (final motion in _pageMotions.values) {
+      motion.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([
-        _motion,
-        widget.routeAnimation,
-        widget.dragMotion,
-      ]),
-      child: ListenableBuilder(
-        listenable: _motion,
-        builder:
-            (context, _) => widget.contentBuilder(
-              context,
-              _motion.value,
-              _motion.isAnimating,
-            ),
-      ),
-      builder: (context, child) {
-        final visual = _motion.value;
-        final routeProgress =
-            widget.routeAnimation.value.clamp(0.0, 1.0).toDouble();
+      animation: _allMotions,
+      builder: (context, _) {
+        final geometry = _geometryMotion.value;
+        final routeProgress = _presentationMotion.value;
+        final clampedProgress = routeProgress.clamp(0.0, 1.0).toDouble();
         const travel = 1000.0;
-        final dragOffset = widget.dragMotion.value;
-        final dragProgress = (dragOffset.dy / travel).clamp(0.0, 1.0);
-        final projectedRect = visual.geometry.rect.shift(
-          Offset(0, travel * (1 - routeProgress)),
+        final dragProgress = (_dragMotion.value / travel).clamp(0.0, 1.0);
+        var presentationRect = geometry.rect;
+        var keyboardOffset = 0.0;
+        if (widget.followsKeyboardInset && widget.keyboardInset > 0) {
+          final keyboardLift =
+              widget.keyboardInset +
+              widget.keyboardInset.clamp(0.0, 45.0).toDouble();
+          final fullscreenProgress =
+              ((geometry.rect.height - widget.keyboardFullscreenStartHeight) /
+                      (widget.keyboardFullscreenEndHeight -
+                              widget.keyboardFullscreenStartHeight)
+                          .clamp(1.0, double.infinity))
+                  .clamp(0.0, 1.0)
+                  .toDouble();
+          keyboardOffset = keyboardLift * (1 - fullscreenProgress);
+          presentationRect = Rect.fromLTWH(
+            geometry.rect.left,
+            geometry.rect.top,
+            geometry.rect.width,
+            (geometry.rect.height - keyboardLift * fullscreenProgress)
+                .clamp(0.0, geometry.rect.height)
+                .toDouble(),
+          );
+        }
+        final projectedRect = presentationRect.shift(
+          Offset(
+            0,
+            travel * (1 - clampedProgress) + _dragMotion.value - keyboardOffset,
+          ),
         );
+        final pageProgresses = <TrayPage<dynamic>, double>{
+          for (final entry in _pageMotions.entries)
+            entry.key: entry.value.value,
+        };
         final frame = _TrayVisualFrame(
-          geometry: visual.geometry,
-          pageProgress: visual.pageProgress,
-          contentOpacity: visual.contentOpacity,
-          routeProgress: routeProgress,
-          dragOffset: dragOffset,
+          geometry: geometry,
           surfaceRect: projectedRect,
-          surfaceScale: 0.94 + 0.06 * routeProgress,
-          surfaceRadius: _surfaceRadius(visual.geometry),
+          surfaceScale: 0.94 + 0.06 * clampedProgress,
+          surfaceRadius: geometry.borderRadius,
           backdropOpacity:
-              (routeProgress *
-                      visual.backdropFactor.clamp(0.0, 1.0) *
+              (clampedProgress *
+                      _backdropMotion.value.clamp(0.0, 1.0) *
                       (1 - 0.6 * dragProgress))
                   .clamp(0.0, 1.0)
                   .toDouble(),
         );
-        return widget.builder(context, frame, _motion.isAnimating, child!);
+        final content = widget.contentBuilder(
+          context,
+          geometry,
+          pageProgresses,
+        );
+        return widget.builder(context, frame, content);
       },
     );
   }
@@ -932,10 +983,6 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
 class _TrayVisualFrame {
   const _TrayVisualFrame({
     required this.geometry,
-    required this.pageProgress,
-    required this.contentOpacity,
-    required this.routeProgress,
-    required this.dragOffset,
     required this.surfaceRect,
     required this.surfaceScale,
     required this.surfaceRadius,
@@ -943,75 +990,10 @@ class _TrayVisualFrame {
   });
 
   final TrayGeometry geometry;
-  final double pageProgress;
-  final double contentOpacity;
-  final double routeProgress;
-  final Offset dragOffset;
   final Rect surfaceRect;
   final double surfaceScale;
   final BorderRadius surfaceRadius;
   final double backdropOpacity;
-}
-
-class _TrayVisualState {
-  const _TrayVisualState({
-    required this.geometry,
-    required this.pageProgress,
-    required this.contentOpacity,
-    required this.backdropFactor,
-  });
-
-  final TrayGeometry geometry;
-  final double pageProgress;
-  final double contentOpacity;
-  final double backdropFactor;
-
-  _TrayVisualState copyWith({
-    TrayGeometry? geometry,
-    double? pageProgress,
-    double? contentOpacity,
-  }) {
-    return _TrayVisualState(
-      geometry: geometry ?? this.geometry,
-      pageProgress: pageProgress ?? this.pageProgress,
-      contentOpacity: contentOpacity ?? this.contentOpacity,
-      backdropFactor: backdropFactor,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      other is _TrayVisualState &&
-      geometry == other.geometry &&
-      pageProgress == other.pageProgress &&
-      contentOpacity == other.contentOpacity &&
-      backdropFactor == other.backdropFactor;
-
-  @override
-  int get hashCode =>
-      Object.hash(geometry, pageProgress, contentOpacity, backdropFactor);
-}
-
-class _TrayVisualStateConverter extends MotionConverter<_TrayVisualState> {
-  const _TrayVisualStateConverter();
-
-  static const _geometryConverter = TrayGeometryMotionConverter();
-
-  @override
-  List<double> normalize(_TrayVisualState value) => [
-    ..._geometryConverter.normalize(value.geometry),
-    value.pageProgress,
-    value.contentOpacity,
-    value.backdropFactor,
-  ];
-
-  @override
-  _TrayVisualState denormalize(List<double> values) => _TrayVisualState(
-    geometry: _geometryConverter.denormalize(values),
-    pageProgress: values[12],
-    contentOpacity: values[13],
-    backdropFactor: values[14],
-  );
 }
 
 class TraySizeObserver extends SingleChildRenderObjectWidget {

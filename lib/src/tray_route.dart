@@ -13,9 +13,10 @@ Future<T?> showTray<T>({
   bool useRootNavigator = false,
   TrayGeometryResolver geometryResolver = const DefaultTrayGeometryResolver(),
   TrayMotionTheme? motionTheme,
-  Color barrierColor = const Color(0x52000000),
+  Color barrierColor = const Color.fromRGBO(0, 0, 0, 0.3),
   bool barrierDismissible = true,
   Widget? footer,
+  WidgetBuilder? footerBuilder,
   Color? surfaceColor,
   TraySurfaceBuilder? surfaceBuilder,
 }) {
@@ -28,6 +29,7 @@ Future<T?> showTray<T>({
       barrierColor: barrierColor,
       barrierDismissible: barrierDismissible,
       footer: footer,
+      footerBuilder: footerBuilder,
       surfaceColor: surfaceColor,
       surfaceBuilder: surfaceBuilder,
     ),
@@ -42,6 +44,7 @@ class TrayRoute<T> extends PopupRoute<T> {
     required Color barrierColor,
     required bool barrierDismissible,
     this.footer,
+    this.footerBuilder,
     this.surfaceColor,
     this.surfaceBuilder,
     this.restorationId,
@@ -54,11 +57,11 @@ class TrayRoute<T> extends PopupRoute<T> {
   final Color _barrierColor;
   final bool _barrierDismissible;
   final Widget? footer;
+  final WidgetBuilder? footerBuilder;
   final Color? surfaceColor;
   final TraySurfaceBuilder? surfaceBuilder;
   final String? restorationId;
-  bool _initialMeasurementReady = false;
-  T? _pendingResult;
+  Object? _pendingResult;
 
   @override
   Color? get barrierColor => _barrierColor;
@@ -75,49 +78,19 @@ class TrayRoute<T> extends PopupRoute<T> {
   Widget buildModalBarrier() => const SizedBox.shrink();
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 300);
+  Duration get transitionDuration => Duration.zero;
 
   @override
   TickerFuture didPush() {
     trayController.markOpening();
-    return super.didPush()..whenCompleteOrCancel(trayController.markOpen);
-  }
-
-  void handleInitialMeasurement() {
-    _initialMeasurementReady = true;
-    _entranceSimulation?.open();
-  }
-
-  _InitialMeasurementSimulation? _entranceSimulation;
-
-  @override
-  Simulation? createSimulation({required bool forward}) {
-    if (!forward) {
-      return motionTheme.close.createSimulation(
-        start: controller?.value ?? 1,
-        end: 0,
-        velocity: controller?.velocity ?? 0,
-      );
-    }
-    final simulation = _InitialMeasurementSimulation(
-      motionTheme.route.createSimulation(start: 0, end: 1),
-    );
-    _entranceSimulation = simulation;
-    if (_initialMeasurementReady) {
-      simulation.open();
-    }
-    return simulation;
+    return super.didPush();
   }
 
   @override
-  Duration get reverseTransitionDuration => transitionDuration;
+  Duration get reverseTransitionDuration => Duration.zero;
 
   @override
   Curve get barrierCurve => Curves.linear;
-
-  // PopupRoute drives its barrier and routeAnimation from the same controller.
-  // TraySurface uses routeAnimation only for route entry/exit; Motor remains
-  // the sole driver of retargetable tray geometry morphs.
 
   @override
   Widget buildPage(
@@ -125,20 +98,19 @@ class TrayRoute<T> extends PopupRoute<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    trayController.attachNavigator(Navigator.of(context));
+    trayController.attachNavigator(Navigator.of(context), this);
     return TrayScope(
       controller: trayController,
       child: TraySurface(
         controller: trayController,
-        routeAnimation: animation,
         geometryResolver: geometryResolver,
         motionTheme: motionTheme,
         footer: footer,
+        footerBuilder: footerBuilder,
         surfaceColor: surfaceColor,
         surfaceBuilder: surfaceBuilder,
         barrierColor: _barrierColor,
         barrierDismissible: _barrierDismissible,
-        onInitialMeasurement: handleInitialMeasurement,
         restorationId: trayController.isRestorable ? restorationId : null,
       ),
     );
@@ -156,13 +128,16 @@ class TrayRoute<T> extends PopupRoute<T> {
 
   @override
   bool didPop(T? result) {
-    if (trayController.lifecycle != TrayLifecycle.closing &&
-        trayController.canPop) {
-      trayController.pop();
-      return false;
+    if (trayController.consumeRoutePopAuthorization()) {
+      return super.didPop(result);
     }
-    trayController.markClosing();
-    return super.didPop(result);
+    if (trayController.lifecycle == TrayLifecycle.closing) return false;
+    if (trayController.canPop) {
+      trayController.pop<Object?>(result);
+    } else {
+      trayController.dismiss(result);
+    }
+    return false;
   }
 
   @override
@@ -178,40 +153,5 @@ class TrayRoute<T> extends PopupRoute<T> {
     trayController.markClosed();
     trayController.detachNavigator();
     trayController.dispose();
-  }
-}
-
-class _InitialMeasurementSimulation extends Simulation {
-  _InitialMeasurementSimulation(this._simulation);
-
-  final Simulation _simulation;
-  double? _startTime;
-  double _lastTime = 0;
-
-  void open() {
-    _startTime ??= _lastTime;
-  }
-
-  double _elapsedTime(double time) {
-    _lastTime = time;
-    final startTime = _startTime;
-    if (startTime == null) {
-      return 0;
-    }
-    return (time - startTime).clamp(0.0, double.infinity).toDouble();
-  }
-
-  @override
-  double x(double time) =>
-      _startTime == null ? 0 : _simulation.x(_elapsedTime(time));
-
-  @override
-  double dx(double time) {
-    return _startTime == null ? 0 : _simulation.dx(_elapsedTime(time));
-  }
-
-  @override
-  bool isDone(double time) {
-    return _startTime != null && _simulation.isDone(_elapsedTime(time));
   }
 }

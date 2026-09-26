@@ -24,9 +24,11 @@ class TrayPage<T> {
   const TrayPage({
     required this.builder,
     this.footer,
+    this.footerBuilder,
     this.hideFooter = false,
     this.presentation = TrayPresentation.content,
     this.layout = TrayPageLayout.intrinsic,
+    this.viewId,
     this.restorationId,
     this.restorationArguments,
   });
@@ -37,11 +39,19 @@ class TrayPage<T> {
   /// is active. Falls back to the footer passed to [showTray] when null.
   final Widget? footer;
 
+  /// Builds a footer with the tray route's context. Prefer this when the
+  /// footer needs access to the current tray session.
+  final WidgetBuilder? footerBuilder;
+
   /// Whether this page hides both its own footer and the route-level fallback.
   final bool hideFooter;
 
   final TrayPresentation presentation;
   final TrayPageLayout layout;
+
+  /// Optional stable identity used by [TrayController.setView] to reuse a
+  /// previously visited page. It is also safe to omit for one-off views.
+  final String? viewId;
 
   /// The stable identifier used to recreate this page during restoration.
   ///

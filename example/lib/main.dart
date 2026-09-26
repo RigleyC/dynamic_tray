@@ -1,9 +1,7 @@
 import 'package:dynamic_tray/dynamic_tray.dart';
 import 'package:flutter/material.dart';
 
-void main() {
-  runApp(const DynamicTrayExampleApp());
-}
+void main() => runApp(const DynamicTrayExampleApp());
 
 class DynamicTrayExampleApp extends StatelessWidget {
   const DynamicTrayExampleApp({super.key});
@@ -25,14 +23,23 @@ class ExampleHomePage extends StatelessWidget {
   const ExampleHomePage({super.key});
 
   Future<void> _openTray(BuildContext context) async {
-    final result = await showTray<String>(
-      context: context,
-      page: TrayPage(builder: (_) => const TrayActionsPage()),
-      footer: const ExampleTrayFooter(),
+    final result = await context.openTray<String>(
+      builder: (_) => const WalletDetailsView(),
+      footer:
+          (context) => SizedBox(
+            height: 65,
+            width: double.infinity,
+            child: FilledButton(
+              onPressed:
+                  () => context.tray.setView(
+                    builder: (_) => const ChooseCategoryView(),
+                  ),
+              child: const Text('Change category'),
+            ),
+          ),
     );
-    if (!context.mounted || result == null) {
-      return;
-    }
+
+    if (!context.mounted || result == null) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Tray result: $result')));
@@ -41,122 +48,80 @@ class ExampleHomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Dynamic Tray example')),
+      appBar: AppBar(title: const Text('Dynamic Tray')),
       body: Center(
         child: FilledButton(
           onPressed: () => _openTray(context),
-          child: const Text('Open tray'),
+          child: const Text('Open details'),
         ),
       ),
     );
   }
 }
 
-class TrayActionsPage extends StatelessWidget {
-  const TrayActionsPage({super.key});
+class WalletDetailsView extends StatelessWidget {
+  const WalletDetailsView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final tray = context.tray;
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 12,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TrayHeader(
-            leading: TraySharedElement(
-              tag: 'wallet-avatar',
-              flightBuilder: _walletAvatarFlight,
-              child: const CircleAvatar(
-                radius: 28,
-                child: Icon(Icons.account_balance_wallet),
-              ),
-            ),
-            title: Text(
-              'Surface navigation',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            subtitle: const Text('A neutral header built from caller widgets.'),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const TrayHeader(
+          leading: CircleAvatar(
+            child: Icon(Icons.account_balance_wallet_outlined),
           ),
-          const Text('Try changing the presentation or opening another page.'),
-          FilledButton(onPressed: tray.expand, child: const Text('Expand')),
-          FilledButton(
-            onPressed: tray.fullscreen,
-            child: const Text('Fullscreen'),
-          ),
-          OutlinedButton(
-            onPressed:
-                () => tray.push<String>(
-                  TrayPage(builder: (_) => const ConfirmationPage()),
-                ),
-            child: const Text('Push page'),
-          ),
-          TextButton(
-            onPressed: () => tray.dismiss('dismissed'),
-            child: const Text('Dismiss'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class ExampleTrayFooter extends StatelessWidget {
-  const ExampleTrayFooter({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-      child: SizedBox(
-        height: 48,
-        width: double.infinity,
-        child: FilledButton(
+          title: Text('Wallet details'),
+          subtitle: Text('One modal session, adapting to its content.'),
+        ),
+        const SizedBox(height: 16),
+        const Text('The optional footer stays part of this tray session.'),
+        const SizedBox(height: 12),
+        OutlinedButton(
           onPressed:
-              () => context.tray.push<String>(
-                TrayPage(builder: (_) => const ConfirmationPage()),
+              () => context.tray.setView(
+                builder: (_) => const ChooseCategoryView(),
               ),
-          child: const Text('Continue from persistent footer'),
+          child: const Text('Choose category'),
         ),
-      ),
+        TextButton(
+          onPressed: () => context.tray.close('cancelled'),
+          child: const Text('Close'),
+        ),
+      ],
     );
   }
 }
 
-class ConfirmationPage extends StatelessWidget {
-  const ConfirmationPage({super.key});
+class ChooseCategoryView extends StatelessWidget {
+  const ChooseCategoryView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 12,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TraySharedElement(
-            tag: 'wallet-avatar',
-            flightBuilder: _walletAvatarFlight,
-            child: const CircleAvatar(
-              radius: 52,
-              child: Icon(Icons.account_balance_wallet, size: 36),
-            ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const TrayHeader(
+          title: Text('Choose category'),
+          subtitle: Text(
+            'This replaces the view without opening another modal.',
           ),
-          Text('Confirmation', style: Theme.of(context).textTheme.titleLarge),
-          const Text('Back pops this page before closing the tray.'),
-          FilledButton(
-            onPressed: () => context.tray.pop('confirmed'),
-            child: const Text('Return result'),
+        ),
+        const SizedBox(height: 16),
+        for (final category in const ['Food', 'Transport', 'Home'])
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(category),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.tray.close(category),
           ),
-        ],
-      ),
+        TextButton(
+          onPressed: context.tray.goBack,
+          child: const Text('Back to details'),
+        ),
+      ],
     );
   }
-}
-
-Widget _walletAvatarFlight(BuildContext context, Widget child) {
-  return Material(type: MaterialType.transparency, child: child);
 }

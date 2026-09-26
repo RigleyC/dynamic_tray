@@ -13,16 +13,21 @@ class TrayController extends ChangeNotifier {
   }) : _pageRestorer = pageRestorer {
     _validatePage(initialPage);
     _entries.add(_TrayEntry<dynamic>(initialPage));
+    _visitedPages.add(initialPage);
     _presentation = initialPage.presentation;
   }
 
   final List<_TrayEntry<dynamic>> _entries = [];
+  final List<TrayPage<dynamic>> _visitedPages = [];
   final TrayPageRestorer? _pageRestorer;
   NavigatorState? _navigator;
   TrayPresentation _presentation = TrayPresentation.content;
   TrayLifecycle _lifecycle = TrayLifecycle.opening;
   TrayPageTransition? _transition;
   int _nextTransitionId = 0;
+  Route<dynamic>? _route;
+  Object? _dismissResult;
+  bool _routePopAuthorized = false;
 
   TrayPage<dynamic> get currentPage => _entries.last.page;
   TrayPresentation get presentation => _presentation;
@@ -32,15 +37,16 @@ class TrayController extends ChangeNotifier {
   bool get isRestorable => _pageRestorer != null;
 
   @internal
-  List<TrayPage<dynamic>> get pages => [
-    for (final entry in _entries) entry.page,
-  ];
+  List<TrayPage<dynamic>> get pages => List.unmodifiable(_visitedPages);
 
   Future<T?> push<T>(TrayPage<T> page) {
     _validatePage(page);
     final outgoing = currentPage;
     final entry = _TrayEntry<T>(page);
     _entries.add(entry);
+    if (!_visitedPages.contains(page)) {
+      _visitedPages.add(page);
+    }
     _presentation = page.presentation;
     _transition = TrayPageTransition(
       id: _nextTransitionId++,
@@ -51,6 +57,56 @@ class TrayController extends ChangeNotifier {
     notifyListeners();
     return entry.completer.future;
   }
+
+  /// Replaces the active view by pushing another view in this tray session.
+  ///
+  /// This is the common navigation API. It keeps the same modal surface and
+  /// animates between the outgoing and incoming content. A non-null [viewId]
+  /// identifies a stable page definition; revisiting it reuses that page's
+  /// builder, footer, layout, and mounted state.
+  void setView({
+    required TrayPageBuilder builder,
+    String? viewId,
+    WidgetBuilder? footer,
+    TrayPageLayout layout = TrayPageLayout.intrinsic,
+  }) {
+    if (viewId != null && viewId.isEmpty) {
+      throw ArgumentError.value(viewId, 'viewId', 'Must not be empty.');
+    }
+    final existingPage =
+        viewId == null
+            ? null
+            : _visitedPages.where((page) => page.viewId == viewId).firstOrNull;
+    if (viewId == null &&
+        currentPage.builder == builder &&
+        currentPage.footerBuilder == footer &&
+        currentPage.layout == layout) {
+      return;
+    }
+    if (existingPage != null) {
+      if (identical(currentPage, existingPage)) return;
+      push<void>(existingPage);
+      return;
+    }
+    push<void>(
+      TrayPage<void>(
+        builder: builder,
+        footerBuilder: footer,
+        layout: layout,
+        viewId: viewId,
+      ),
+    );
+  }
+
+  /// Returns to the previous view. At the root view this does nothing.
+  void goBack() {
+    if (canPop) {
+      pop<void>();
+    }
+  }
+
+  /// Closes this tray session and completes the future returned by openTray.
+  void close<T>([T? result]) => dismiss<T>(result);
 
   bool pop<T>([T? result]) {
     if (!canPop) {
@@ -141,6 +197,9 @@ class TrayController extends ChangeNotifier {
     _entries
       ..clear()
       ..addAll([for (final page in restoredPages) _TrayEntry<dynamic>(page)]);
+    _visitedPages
+      ..clear()
+      ..addAll(restoredPages);
     _presentation = restoredPresentation;
     _transition = null;
     if (notify) {
@@ -149,6 +208,21 @@ class TrayController extends ChangeNotifier {
   }
 
   void _validatePage(TrayPage<dynamic> page) {
+    final viewId = page.viewId;
+    if (viewId != null && viewId.isEmpty) {
+      throw ArgumentError.value(viewId, 'page.viewId', 'Must not be empty.');
+    }
+    if (viewId != null &&
+        _visitedPages.any(
+          (visited) => visited.viewId == viewId && !identical(visited, page),
+        )) {
+      throw ArgumentError.value(
+        viewId,
+        'page.viewId',
+        'A viewId must identify one stable page definition. Use setView to '
+            'reuse an existing page.',
+      );
+    }
     if (_pageRestorer == null) {
       return;
     }
@@ -181,13 +255,32 @@ class TrayController extends ChangeNotifier {
   }
 
   void dismiss<T>([T? result]) {
-    _setLifecycle(TrayLifecycle.closing);
-    final navigator = _navigator;
-    if (navigator == null) {
-      completeRoute(result);
+    if (_lifecycle == TrayLifecycle.closing ||
+        _lifecycle == TrayLifecycle.closed) {
       return;
     }
-    navigator.pop<T>(result);
+    final route = _route;
+    if (route != null && !route.isCurrent) {
+      return;
+    }
+    _dismissResult = result;
+    _setLifecycle(TrayLifecycle.closing);
+  }
+
+  @internal
+  void completeDismissAnimation() {
+    if (_lifecycle != TrayLifecycle.closing || _route?.isCurrent != true) {
+      return;
+    }
+    _routePopAuthorized = true;
+    _navigator?.pop<Object?>(_dismissResult);
+  }
+
+  @internal
+  bool consumeRoutePopAuthorization() {
+    final authorized = _routePopAuthorized;
+    _routePopAuthorized = false;
+    return authorized;
   }
 
   void _setLifecycle(TrayLifecycle lifecycle) {
@@ -223,13 +316,15 @@ class TrayController extends ChangeNotifier {
   }
 
   @internal
-  void attachNavigator(NavigatorState navigator) {
+  void attachNavigator(NavigatorState navigator, Route<dynamic> route) {
     _navigator = navigator;
+    _route = route;
   }
 
   @internal
   void detachNavigator() {
     _navigator = null;
+    _route = null;
   }
 }
 

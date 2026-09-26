@@ -11,7 +11,7 @@ class TrayScope extends InheritedNotifier<TrayController> {
 
   static TrayController of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<TrayScope>();
-    assert(scope != null, 'Tray.of(context) called outside a TrayRoute.');
+    assert(scope != null, 'context.tray can only be used inside an open tray.');
     return scope!.notifier!;
   }
 }

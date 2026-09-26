@@ -1,49 +1,81 @@
 # dynamic_tray
 
-The first foundation for a Family-inspired, motion-driven surface navigation
-system in Flutter.
+A Flutter tray inspired by Expo Dynamic Tray: one modal session that adapts to
+its content and changes views in place. Open it directly from a `BuildContext`;
+inside the route, use `context.tray` to change views or close the session.
+
+## Quick start
+
+Open a tray from any button. The returned future completes with the optional
+result when the session closes. No root widget or manually-created controller
+is required:
 
 ```dart
-final result = await showTray<String>(
-  context: context,
-  page: TrayPage(
-    builder: (_) => const WalletPicker(),
+final result = await context.openTray<String>(
+  builder: (_) => const WalletDetailsPage(),
+  footer: (context) => SizedBox(
+    height: 65,
+    child: FilledButton(
+      onPressed: () => context.tray.setView(
+        viewId: 'choose-category',
+        builder: (_) => const ChooseCategoryPage(),
+      ),
+      child: const Text('Change category'),
+    ),
   ),
-  footer: const WalletPickerActions(),
 );
 ```
 
-The optional route-level `footer` is hosted by the tray surface, so it stays
-mounted while pages are pushed and popped. A page can provide its own footer,
-or set `hideFooter: true` to hide both its own footer and the route fallback.
-Page footers occupy one persistent surface slot, so sharing the same widget
-instance across pages preserves its state:
+Change views inside the same tray surface, go back, or close with a result:
 
 ```dart
-final sharedActions = const WalletPickerActions();
+context.tray.setView(
+  viewId: 'choose-category',
+  builder: (_) => const ChooseCategoryPage(),
+);
 
-final firstPage = TrayPage(
-  builder: (_) => const WalletPicker(),
-  footer: sharedActions,
-);
-final detailsPage = TrayPage(
-  builder: (_) => const WalletDetails(),
-  footer: sharedActions,
-);
+context.tray.goBack();
+context.tray.close('saved');
 ```
 
-When a page's `footer` is null, the route-level footer remains the fallback
-unless `hideFooter` is true. The active footer's measured height is included in
-compact tray sizing and reserved from the page viewport. The default surface is
-white when no `surfaceBuilder` is provided. When a custom `surfaceBuilder` is
-provided, the default interior is transparent so a host surface, such as a
-themed `Material`, remains visible during content fades. Set `surfaceColor`
-explicitly to paint an interior color in either case. The package itself does
-not read a Material or Cupertino theme.
+The common path does not require a manually-created controller, view IDs,
+layout/presentation flags, or animation configuration. Intrinsic content sizes
+the tray automatically; when it exceeds 72% of the available height, the tray
+morphs to fullscreen for that page visit, avoiding threshold oscillation when
+fullscreen width changes text wrapping. A `ListView` or `CustomScrollView` at the page root needs
+the optional `layout: TrayPageLayout.bounded`, which provides a finite viewport
+for scrolling. Add `viewId` only when a view should be reused after revisiting
+it. A footer is optional and occupies the reference's fixed 65 px slot.
 
-`TrayHeader` is an optional layout helper. It accepts `leading`, `title`,
-`subtitle`, and `trailing` widgets and does not impose icons, typography,
-colors, or actions:
+## Motion and behavior goals
+
+The implementation target is the Expo reference behavior, not merely matching
+its spring constants:
+
+- One tray session and one surface while switching views; visited views stay
+  mounted for that session and are released when it closes.
+- One visual coordinator composes independent Motor controllers for bounds,
+  presentation, backdrop, page crossfade, and drag. Retargeting one channel
+  does not restart another, and each action keeps the reference's own profile.
+- Drag begins from the handle, uses the reference distance/velocity thresholds,
+  and returns with gesture velocity when it is cancelled.
+- Tray geometry follows live keyboard inset updates and adds the reference
+  45-point lift above its safe-area gap. Keyboard timing still needs device
+  verification.
+- Default sizing, footer reservation, safe areas, and view transitions follow
+  the Expo tray. Flutter-specific restoration and shared elements remain
+  optional; fullscreen is reached by explicit presentation or tall intrinsic
+  content, and returning from a stacked fullscreen page morphs to its prior view.
+
+These are code-level behavior targets, not a claim of verified visual parity.
+Confirm the experience on-device for opening, closing,
+content resizing, both directions of view changes, drag/cancel, keyboard, and
+Android back before calling the port complete.
+
+## Optional widgets
+
+`TrayHeader` is a neutral layout helper: the caller supplies each widget, so the
+package does not impose app typography, colors, or icon choices.
 
 ```dart
 TrayHeader(
@@ -54,125 +86,12 @@ TrayHeader(
 )
 ```
 
-Tray pages declare their layout contract. Intrinsic pages are measured from
-their live content and are ideal for short forms and compact steps. Bounded
-pages receive a finite viewport and must own their scrolling, which makes them
-the right choice for `ListView`, `CustomScrollView`, and sliver-heavy pages:
+The Expo sample's trigger, handle, and action buttons are useful interaction
+patterns, but their app-specific styling should not become mandatory package
+configuration. A trigger convenience widget may be added later; opening through
+`context.openTray` remains the basic API.
 
-```dart
-TrayPage(
-  layout: TrayPageLayout.bounded,
-  builder: (_) => const WalletListPage(),
-)
-```
+## Example
 
-The tray does not insert a universal `SingleChildScrollView` around pages.
-This avoids nested scroll views and invalid sliver geometry; the page's own
-scrollable receives the viewport it needs.
-
-Inside a tray page, navigation and presentation stay local to the surface:
-
-```dart
-final tray = context.tray;
-
-tray.expand();
-tray.fullscreen();
-
-final value = await tray.push<String>(
-  TrayPage(builder: (_) => const ConfirmPage()),
-);
-
-tray.pop(value);
-```
-
-Pages can opt into a tag-matched visual flight:
-
-```dart
-TraySharedElement(
-  tag: 'wallet-avatar',
-  flightBuilder: (context, child) => Material(
-    type: MaterialType.transparency,
-    child: child,
-  ),
-  child: const CircleAvatar(),
-)
-```
-
-Place the same tag on the destination page. If either page does not declare a
-matching tag, the normal page transition is used. The flight is visual-only;
-state and pointer ownership remain in the page widgets.
-
-The surface uses `motor` for route entry/exit, geometry, page effects, and drag settling. Page
-changes combine crossfade, a subtle scale, and horizontal movement, all derived
-from the same `pageProgress`. Route entry/exit and its backdrop use the route
-animation; backdrop opacity also retargets with the effects motion during
-fullscreen morphs and follows interactive drag distance. The default
-`TrayMotionTheme.family()` defines distinct Motor profiles for opening,
-closing, geometry, effects, and interactive settling. Closing uses a 340 ms
-curve, while opening uses a spring. Surface travel, scale, content opacity,
-and backdrop opacity derive from route progress. Keyboard-driven changes follow
-the OS-reported inset directly, without a second spring. The transition
-keeps the same container-transform vocabulary as Flutter's `OpenContainer`,
-with a fading barrier, changing corner radius, and surface elevation. Fullscreen
-is still the same tray surface, so it transforms in place instead of pushing a
-second route.
-
-The tray recalculates its target from the current content size, keeps outgoing
-and incoming pages alive for the transition, and dismisses after a downward
-fling. A downward gesture can start from the top drag area of the surface; on
-an internal page it pops that page first, and on the root page it dismisses the
-route. Back navigation follows the same rule. Load data before calling
-`showTray` when the final compact height is known; otherwise an intrinsic page
-is measured and the tray animates from its initial safe size to the content
-size. Bounded pages start from the configured expanded fraction and keep their
-viewport stable while their own scrollable loads content.
-Inactive pages remain mounted for state preservation but do not overwrite the
-active page's content measurement; switching pages reports the new size again.
-
-The default non-fullscreen geometry leaves 8 logical pixels on the left, right,
-and bottom. Its maximum height reserves both the top safe area and that bottom
-margin. The bottom system safe-area inset is preserved, or the keyboard inset
-when the keyboard is open. Fullscreen geometry remains edge-to-edge, with its
-height shortened only by the keyboard when present.
-
-For state restoration, use a stable page ID and codec-compatible arguments,
-provide a page restorer to the controller, and insert the route with Flutter's
-`Navigator.restorablePush`:
-
-```dart
-@pragma('vm:entry-point')
-Route<void> buildWalletTray(BuildContext context, Object? arguments) {
-  TrayPage<dynamic> restorePage(String id, Object? pageArguments) {
-    return walletPageFor(id, pageArguments);
-  }
-
-  return TrayRoute<void>(
-    trayController: TrayController(
-      initialPage: restorePage('wallets', arguments),
-      pageRestorer: restorePage,
-    ),
-    geometryResolver: const DefaultTrayGeometryResolver(),
-    motionTheme: TrayMotionTheme.family(),
-    barrierColor: const Color(0x52000000),
-    barrierDismissible: true,
-    restorationId: 'wallet-tray',
-  );
-}
-
-Navigator.of(context).restorablePush(
-  buildWalletTray,
-  arguments: <String, Object?>{'accountId': 'primary'},
-);
-```
-
-Each page pushed into this controller must set `restorationId` and
-`restorationArguments`. Widget builders are recreated by `restorePage`; they
-are not serialized. Scroll-position handoff between related pages remains a
-future slice.
-
-Run the interactive example from this package with:
-
-```bash
-cd example
-flutter run
-```
+Run the interactive example from this package with `cd example` and
+`flutter run`.
