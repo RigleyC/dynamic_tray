@@ -93,24 +93,34 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
   const DefaultTrayGeometryResolver({
     this.horizontalMargin = 8,
     this.bottomMargin = 8,
-    this.maxWidth = 360,
+    this.maxWidth = double.infinity,
     this.radius = 38,
   });
 
+  /// Gap from the left and right edges of the route viewport.
   final double horizontalMargin;
+
+  /// Gap outside the safe area and above the keyboard.
   final double bottomMargin;
+
+  /// Centered width limit. Infinite by default to preserve the side gaps.
   final double maxWidth;
   final double radius;
 
   @override
   TrayGeometry resolve(TrayLayoutContext context, Size contentSize) {
     final safeTop = context.padding.top;
+    // The surface is translated above the keyboard by the motion coordinator.
+    // Limit its height here so that translation does not push the top offscreen.
     final safeBottom = context.padding.bottom;
-    final bottomInset = safeBottom;
+    final keyboardLift = (context.viewInsets.bottom - safeBottom)
+        .clamp(0.0, double.infinity)
+        .toDouble();
+    final bottomGap = safeBottom + bottomMargin;
     final availableHeight = (context.size.height -
             safeTop -
-            bottomInset -
-            bottomMargin)
+            bottomGap -
+            keyboardLift)
         .clamp(0.0, context.size.height);
     final availableWidth = (context.size.width - horizontalMargin * 2).clamp(
       0.0,
@@ -125,7 +135,7 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
     return TrayGeometry(
       rect: Rect.fromLTWH(
         (context.size.width - width) / 2,
-        context.size.height - bottomInset - bottomMargin - safeHeight,
+        context.size.height - bottomGap - safeHeight,
         width,
         safeHeight,
       ),

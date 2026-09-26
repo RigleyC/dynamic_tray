@@ -37,6 +37,15 @@ class TrayController extends ChangeNotifier {
 
   Future<T?> push<T>(TrayPage<T> page) {
     _validatePage(page);
+    if (identical(currentPage, page)) {
+      return _entries.last.completer.future as Future<T?>;
+    }
+    if (_transition != null) {
+      if (identical(_transition!.incoming, page)) {
+        return _entries.last.completer.future as Future<T?>;
+      }
+      return Future<T?>.value();
+    }
     final outgoing = currentPage;
     final entry = _TrayEntry<T>(page);
     _entries.add(entry);
@@ -68,9 +77,21 @@ class TrayController extends ChangeNotifier {
     if (viewId != null && viewId.isEmpty) {
       throw ArgumentError.value(viewId, 'viewId', 'Must not be empty.');
     }
+    // A transition already owns the surface. Ignore repeated or competing
+    // taps until its incoming page has settled instead of stacking pages.
+    if (_transition != null) {
+      return;
+    }
     final existingPage =
         viewId == null
-            ? null
+            ? _visitedPages
+                .where(
+                  (page) =>
+                      page.builder == builder &&
+                      page.footerBuilder == footer &&
+                      page.layout == layout,
+                )
+                .firstOrNull
             : _visitedPages.where((page) => page.viewId == viewId).firstOrNull;
     if (viewId == null &&
         currentPage.builder == builder &&
@@ -104,6 +125,9 @@ class TrayController extends ChangeNotifier {
   void close<T>([T? result]) => dismiss<T>(result);
 
   bool pop<T>([T? result]) {
+    if (_transition != null) {
+      return false;
+    }
     if (!canPop) {
       dismiss(result);
       return true;

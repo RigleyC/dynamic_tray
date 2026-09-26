@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 import 'tray_controller.dart';
@@ -7,6 +9,14 @@ import 'tray_page.dart';
 import 'tray_surface.dart';
 import 'tray_scope.dart';
 
+final Expando<Object> _activeTrays = Expando<Object>(
+  'dynamic_tray active route',
+);
+
+/// Opens a tray on the selected navigator.
+///
+/// Each navigator hosts at most one tray at a time. An additional call while
+/// that tray is active is ignored and completes with `null`.
 Future<T?> showTray<T>({
   required BuildContext context,
   required TrayPage<T> page,
@@ -20,7 +30,14 @@ Future<T?> showTray<T>({
   Color? surfaceColor,
 }) {
   final controller = TrayController(initialPage: page);
-  return Navigator.of(context, rootNavigator: useRootNavigator).push<T>(
+  final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
+  if (_activeTrays[navigator] != null) {
+    controller.dispose();
+    return Future<T?>.value();
+  }
+
+  final identity = Object();
+  final result = navigator.push<T>(
     TrayRoute<T>(
       trayController: controller,
       geometryResolver: geometryResolver,
@@ -32,6 +49,20 @@ Future<T?> showTray<T>({
       surfaceColor: surfaceColor,
     ),
   );
+  _activeTrays[navigator] = identity;
+  void release() {
+    if (identical(_activeTrays[navigator], identity)) {
+      _activeTrays[navigator] = null;
+    }
+  }
+
+  unawaited(
+    result.then<void>(
+      (_) => release(),
+      onError: (Object error, StackTrace stackTrace) => release(),
+    ),
+  );
+  return result;
 }
 
 class TrayRoute<T> extends PopupRoute<T> {

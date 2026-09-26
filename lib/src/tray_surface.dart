@@ -1,4 +1,5 @@
-import 'package:flutter/rendering.dart';
+import 'package:flutter/rendering.dart'
+    show RenderBox, RenderProxyBox, ShapeBorderClipper;
 import 'package:flutter/widgets.dart';
 import 'package:motor/motor.dart';
 
@@ -42,6 +43,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   Size _contentSize = Size.zero;
   final Map<TrayPage<dynamic>, Size> _contentSizes = {};
   bool _hasInitialMeasurement = false;
+  double _footerHeight = 0;
   bool _isDragging = false;
   double _dragTranslation = 0;
   final GlobalKey _surfaceKey = GlobalKey();
@@ -151,6 +153,13 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
         _hasInitialMeasurement = true;
       }
     });
+  }
+
+  void _updateFooterHeight(Size size) {
+    if (!mounted || (_footerHeight - size.height).abs() < 0.5) {
+      return;
+    }
+    setState(() => _footerHeight = size.height);
   }
 
   void _startDrag(DragStartDetails details) {
@@ -318,7 +327,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
           builder: (context, constraints) {
             final mediaQuery = MediaQuery.of(context);
             final currentPage = widget.controller.currentPage;
-            const estimatedFooterHeight = 65.0;
             final footer =
                 currentPage.hideFooter
                     ? null
@@ -326,18 +334,23 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                         currentPage.footer ??
                         widget.footerBuilder?.call(context) ??
                         widget.footer;
-            final activeFooterHeight =
-                footer == null ? 0.0 : estimatedFooterHeight;
-            final safeBottom = mediaQuery.padding.bottom;
+            final activeFooterHeight = footer == null ? 0.0 : _footerHeight;
+            final viewportBottomInset =
+                (mediaQuery.viewInsets.bottom > mediaQuery.padding.bottom
+                        ? mediaQuery.viewInsets.bottom
+                        : mediaQuery.padding.bottom) +
+                8.0;
             final layoutContext = TrayLayoutContext(
               size: constraints.biggest,
               padding: mediaQuery.padding,
               viewInsets: mediaQuery.viewInsets,
             );
-            var boundedFallbackHeight =
+            final boundedFallbackHeight =
                 (layoutContext.size.height -
                         mediaQuery.padding.top -
-                        safeBottom)
+                        viewportBottomInset -
+                        activeFooterHeight -
+                        60)
                     .clamp(0.0, layoutContext.size.height)
                     .toDouble();
             final measuredContentSize =
@@ -385,11 +398,14 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                       transition: transition,
                       geometryMotion: widget.motionTheme.geometry,
                       effectsMotion: widget.motionTheme.effects,
+                      effectsExitMotion: widget.motionTheme.effectsExit,
                       routeMotion: widget.motionTheme.route,
                       closeMotion: widget.motionTheme.close,
                       interactiveMotion: widget.motionTheme.interactive,
-                      keyboardInset: mediaQuery.viewInsets.bottom,
-                      safeBottomInset: safeBottom,
+                      keyboardInset: (mediaQuery.viewInsets.bottom -
+                              mediaQuery.padding.bottom)
+                          .clamp(0.0, double.infinity)
+                          .toDouble(),
                       initialMeasurementReady: _hasInitialMeasurement,
                       closing:
                           widget.controller.lifecycle == TrayLifecycle.closing,
@@ -455,15 +471,21 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                 scale: visualState.surfaceScale,
                                 child: Builder(
                                   builder: (context) {
+                                    final shape = RoundedSuperellipseBorder(
+                                      borderRadius: surfaceRadius,
+                                    );
                                     final surface = DecoratedBox(
-                                      decoration: BoxDecoration(
+                                      decoration: ShapeDecoration(
                                         color:
                                             widget.surfaceColor ??
                                             const Color(0xFF141414),
-                                        borderRadius: surfaceRadius,
+                                        shape: shape,
                                       ),
-                                      child: ClipRRect(
-                                        borderRadius: surfaceRadius,
+                                      child: ClipPath(
+                                        clipper: ShapeBorderClipper(
+                                          shape: shape,
+                                        ),
+                                        clipBehavior: Clip.antiAlias,
                                         child: Stack(
                                           fit: StackFit.expand,
                                           children: [
@@ -475,7 +497,12 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                                 bottom: 24,
                                                 left: 24,
                                                 right: 24,
-                                                child: footer,
+                                                child: TraySizeObserver(
+                                                  enabled: true,
+                                                  onSizeChanged:
+                                                      _updateFooterHeight,
+                                                  child: footer,
+                                                ),
                                               ),
                                             Positioned(
                                               top: 8,
@@ -541,11 +568,11 @@ class _TrayMotionCoordinator extends StatefulWidget {
     required this.transition,
     required this.geometryMotion,
     required this.effectsMotion,
+    required this.effectsExitMotion,
     required this.routeMotion,
     required this.closeMotion,
     required this.interactiveMotion,
     required this.keyboardInset,
-    required this.safeBottomInset,
     required this.initialMeasurementReady,
     required this.closing,
     required this.onTransitionSettled,
@@ -559,11 +586,11 @@ class _TrayMotionCoordinator extends StatefulWidget {
   final TrayPageTransition? transition;
   final Motion geometryMotion;
   final Motion effectsMotion;
+  final Motion effectsExitMotion;
   final Motion routeMotion;
   final Motion closeMotion;
   final Motion interactiveMotion;
   final double keyboardInset;
-  final double safeBottomInset;
   final bool initialMeasurementReady;
   final bool closing;
   final ValueChanged<int> onTransitionSettled;
@@ -715,7 +742,13 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
         return SingleMotionController(
           motion: widget.effectsMotion,
           vsync: this,
-          initialValue: 0,
+          // The first page is already present when the tray opens. The Expo
+          // package only applies this crossfade to subsequent view changes.
+          initialValue:
+              widget.transition == null &&
+                      identical(page, widget.controller.currentPage)
+                  ? 1
+                  : 0,
         )..addStatusListener(_handlePageMotionStatus);
       });
     }
@@ -737,8 +770,10 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
           !entry.value.isAnimating) {
         continue;
       }
-      if (entry.value.motion != widget.effectsMotion) {
-        entry.value.motion = widget.effectsMotion;
+      final motion =
+          target == 1 ? widget.effectsMotion : widget.effectsExitMotion;
+      if (entry.value.motion != motion) {
+        entry.value.motion = motion;
       }
       entry.value.animateTo(target);
     }
@@ -808,10 +843,7 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
         final clampedProgress = routeProgress.clamp(0.0, 1.0).toDouble();
         const travel = 1000.0;
         final dragProgress = (_dragMotion.value / travel).clamp(0.0, 1.0);
-        final keyboardLift =
-            (widget.keyboardInset - widget.safeBottomInset)
-                .clamp(0.0, double.infinity)
-                .toDouble();
+        final keyboardLift = widget.keyboardInset;
         final projectedRect = geometry.rect.shift(
           Offset(
             0,
