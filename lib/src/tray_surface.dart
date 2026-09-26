@@ -335,11 +335,11 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                         widget.footerBuilder?.call(context) ??
                         widget.footer;
             final activeFooterHeight = footer == null ? 0.0 : _footerHeight;
-            final viewportBottomInset =
-                (mediaQuery.viewInsets.bottom > mediaQuery.padding.bottom
-                        ? mediaQuery.viewInsets.bottom
-                        : mediaQuery.padding.bottom) +
-                8.0;
+            final innerBottomPadding =
+                mediaQuery.padding.bottom > 24
+                    ? mediaQuery.padding.bottom
+                    : 24.0;
+            final viewportBottomGap = mediaQuery.viewInsets.bottom + 8.0;
             final layoutContext = TrayLayoutContext(
               size: constraints.biggest,
               padding: mediaQuery.padding,
@@ -348,9 +348,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
             final boundedFallbackHeight =
                 (layoutContext.size.height -
                         mediaQuery.padding.top -
-                        viewportBottomInset -
+                        viewportBottomGap -
                         activeFooterHeight -
-                        60)
+                        36 -
+                        innerBottomPadding)
                     .clamp(0.0, layoutContext.size.height)
                     .toDouble();
             final measuredContentSize =
@@ -362,7 +363,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                     : _contentSizes[currentPage] ?? _contentSize;
             final contentSize = Size(
               measuredContentSize.width,
-              measuredContentSize.height + activeFooterHeight + 60,
+              measuredContentSize.height +
+                  activeFooterHeight +
+                  36 +
+                  innerBottomPadding,
             );
             final geometry = widget.geometryResolver.resolve(
               layoutContext,
@@ -402,10 +406,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                       routeMotion: widget.motionTheme.route,
                       closeMotion: widget.motionTheme.close,
                       interactiveMotion: widget.motionTheme.interactive,
-                      keyboardInset: (mediaQuery.viewInsets.bottom -
-                              mediaQuery.padding.bottom)
-                          .clamp(0.0, double.infinity)
-                          .toDouble(),
+                      keyboardInset:
+                          mediaQuery.viewInsets.bottom
+                              .clamp(0.0, double.infinity)
+                              .toDouble(),
                       initialMeasurementReady: _hasInitialMeasurement,
                       closing:
                           widget.controller.lifecycle == TrayLifecycle.closing,
@@ -415,14 +419,20 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                         final rect = visualState.geometry.rect;
                         return Positioned.fill(
                           top: 36,
-                          bottom: footer == null ? 24 : activeFooterHeight + 24,
+                          bottom:
+                              footer == null
+                                  ? innerBottomPadding
+                                  : activeFooterHeight + innerBottomPadding,
                           child: _buildContent(
                             context: context,
                             rect: Rect.fromLTWH(
                               0,
                               0,
                               rect.width,
-                              (rect.height - activeFooterHeight - 60)
+                              (rect.height -
+                                      activeFooterHeight -
+                                      36 -
+                                      innerBottomPadding)
                                   .clamp(0.0, rect.height)
                                   .toDouble(),
                             ),
@@ -494,7 +504,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                             ),
                                             if (footer != null)
                                               Positioned(
-                                                bottom: 24,
+                                                bottom: innerBottomPadding,
                                                 left: 24,
                                                 right: 24,
                                                 child: TraySizeObserver(
