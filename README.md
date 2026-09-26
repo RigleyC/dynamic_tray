@@ -59,9 +59,10 @@ its spring constants:
   does not restart another, and each action keeps the reference's own profile.
 - Drag begins from the handle, uses the reference distance/velocity thresholds,
   and returns with gesture velocity when it is cancelled.
-- Tray geometry follows live keyboard inset updates and adds the reference
-  45-point lift above its safe-area gap. Keyboard timing still needs device
-  verification.
+- Compact surfaces keep an 8 px device-edge and keyboard gap. The fullscreen
+  surface keeps the same edge inset, and its page fills the surface without the
+  compact page padding or drag handle. Compact page content has 16 px horizontal
+  padding; fullscreen pages own their content padding.
 - Default sizing, footer reservation, safe areas, and view transitions follow
   the Expo tray. Flutter-specific restoration and shared elements remain
   optional; fullscreen is reached by explicit presentation or tall intrinsic

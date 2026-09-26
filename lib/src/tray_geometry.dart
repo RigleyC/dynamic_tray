@@ -97,12 +97,12 @@ abstract interface class TrayGeometryResolver {
 
 class DefaultTrayGeometryResolver implements TrayGeometryResolver {
   const DefaultTrayGeometryResolver({
-    this.horizontalMargin = 16,
-    this.bottomMargin = 0,
+    this.horizontalMargin = 8,
+    this.bottomMargin = 8,
     this.maxWidth = 360,
     this.expandedFraction = 0.72,
-    this.fullscreenRadius = 0,
-    this.contentRadius = 38,
+    this.fullscreenRadius = 32,
+    this.contentRadius = 32,
   });
 
   final double horizontalMargin;
@@ -119,8 +119,7 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
     Size contentSize,
   ) {
     final safeTop = context.padding.top;
-    final safeBottom =
-        context.padding.bottom.clamp(16.0, double.infinity).toDouble();
+    final safeBottom = context.padding.bottom;
     final bottomInset = safeBottom;
     final availableHeight = (context.size.height -
             safeTop -
@@ -135,7 +134,12 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
 
     if (presentation == TrayPresentation.fullscreen) {
       return TrayGeometry(
-        rect: Rect.fromLTWH(0, 0, context.size.width, context.size.height),
+        rect: Rect.fromLTRB(
+          horizontalMargin,
+          bottomMargin,
+          context.size.width - horizontalMargin,
+          context.size.height - bottomMargin,
+        ),
         borderRadius: BorderRadius.circular(fullscreenRadius),
       );
     }

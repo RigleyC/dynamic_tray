@@ -213,10 +213,13 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   }) {
     Widget child = SizedBox(
       width: width,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: page,
-      ),
+      child:
+          pageEntry.presentation == TrayPresentation.fullscreen
+              ? page
+              : Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: page,
+              ),
     );
     child = TraySharedElementScope(
       registry: _sharedElementRegistry,
@@ -339,10 +342,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                         widget.footer;
             final activeFooterHeight =
                 footer == null ? 0.0 : estimatedFooterHeight;
-            final safeBottom =
-                mediaQuery.padding.bottom
-                    .clamp(16.0, double.infinity)
-                    .toDouble();
+            final safeBottom = mediaQuery.padding.bottom;
             final availableHeight =
                 (constraints.biggest.height -
                         mediaQuery.padding.top -
@@ -459,7 +459,11 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                       safeBottom) *
                                   resolver.expandedFraction
                               : layoutContext.size.height,
-                      keyboardFullscreenEndHeight: layoutContext.size.height,
+                      keyboardFullscreenEndHeight:
+                          resolver is DefaultTrayGeometryResolver
+                              ? layoutContext.size.height -
+                                  resolver.bottomMargin * 2
+                              : layoutContext.size.height,
                       initialMeasurementReady: _hasInitialMeasurement,
                       closing:
                           widget.controller.lifecycle == TrayLifecycle.closing,
@@ -467,9 +471,19 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                           widget.controller.completePageTransition,
                       contentBuilder: (context, geometry, pageProgresses) {
                         final rect = geometry.rect;
+                        final isFullscreen =
+                            effectivePresentation ==
+                            TrayPresentation.fullscreen;
                         return Positioned.fill(
-                          top: 36,
-                          bottom: activeFooterHeight + 24,
+                          top: isFullscreen ? 0 : 52,
+                          bottom:
+                              isFullscreen
+                                  ? (footer == null
+                                      ? 0
+                                      : activeFooterHeight + 8)
+                                  : (footer == null
+                                      ? 8
+                                      : activeFooterHeight + 8),
                           child: _buildContent(
                             context: context,
                             rect: Rect.fromLTWH(
@@ -525,7 +539,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                 scale: visualState.surfaceScale,
                                 child: Builder(
                                   builder: (context) {
-                                    const canDrag = true;
+                                    final canDrag =
+                                        effectivePresentation !=
+                                        TrayPresentation.fullscreen;
                                     final surface = DecoratedBox(
                                       decoration: BoxDecoration(
                                         color:
@@ -545,9 +561,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                             ),
                                             if (footer != null)
                                               Positioned(
-                                                bottom: 24,
-                                                left: 24,
-                                                right: 24,
+                                                bottom: 8,
+                                                left: 16,
+                                                right: 16,
                                                 child: footer,
                                               ),
                                             if (canDrag)
@@ -927,9 +943,7 @@ class _TrayVisualMotionBuilderState extends State<_TrayVisualMotionBuilder>
         var presentationRect = geometry.rect;
         var keyboardOffset = 0.0;
         if (widget.followsKeyboardInset && widget.keyboardInset > 0) {
-          final keyboardLift =
-              widget.keyboardInset +
-              widget.keyboardInset.clamp(0.0, 45.0).toDouble();
+          final keyboardLift = widget.keyboardInset;
           final fullscreenProgress =
               ((geometry.rect.height - widget.keyboardFullscreenStartHeight) /
                       (widget.keyboardFullscreenEndHeight -
