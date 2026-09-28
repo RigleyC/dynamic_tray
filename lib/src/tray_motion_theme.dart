@@ -5,8 +5,8 @@ class TrayMotionTheme {
   const TrayMotionTheme({
     required this.route,
     this.close = const CurvedMotion(
-      Duration(milliseconds: 340),
-      Cubic(0.55, 0, 1, 0.45),
+      Duration(milliseconds: 220),
+      Cubic(0.4, 0, 0.8, 1),
     ),
     required this.geometry,
     required this.effects,
@@ -15,12 +15,19 @@ class TrayMotionTheme {
       Cubic(0.42, 0, 1, 1),
     ),
     required this.interactive,
+    this.hiddenGap = 16.0,
+    this.dragFadeDistance = 240.0,
   });
 
   /// Motor motion for the tray's presentation spring when opening.
   final Motion route;
 
   /// Motor motion for the tray's timed close.
+  ///
+  /// The travel distance is measured, not fixed, so almost the whole curve maps
+  /// to pixels the user can see. The shape is therefore close to linear with a
+  /// mild ease-in: a stronger ease-out would clear the screen early and leave a
+  /// long tail where the tray is already gone.
   final Motion close;
 
   /// Motor motion for changes to the tray's bounds and corner radius.
@@ -35,14 +42,30 @@ class TrayMotionTheme {
   /// Motion used to settle interactive drag gestures.
   final Motion interactive;
 
+  /// Pixels the tray travels past the bottom of the viewport once hidden.
+  ///
+  /// A hidden tray should sit clear of the edge rather than flush with it,
+  /// otherwise the last frame before it disappears clips against the viewport.
+  final double hiddenGap;
+
+  /// Drag distance over which the backdrop fades out.
+  ///
+  /// The backdrop is the only feedback during a drag, so it needs its own
+  /// scale instead of borrowing the travel distance, which changes with the
+  /// tray's height.
+  final double dragFadeDistance;
+
   factory TrayMotionTheme.family() {
     return TrayMotionTheme(
+      // The travel distance is now the tray's own height plus its bottom gap,
+      // roughly a third of a fixed long distance. The spring has to be stiffer
+      // to cover those fewer pixels in the same perceptual window.
       route: const SpringMotion(
-        SpringDescription(mass: 1, stiffness: 240, damping: 26),
+        SpringDescription(mass: 1, stiffness: 400, damping: 34),
       ),
       close: const CurvedMotion(
-        Duration(milliseconds: 340),
-        Cubic(0.55, 0, 1, 0.45),
+        Duration(milliseconds: 220),
+        Cubic(0.4, 0, 0.8, 1),
       ),
       geometry: const SpringMotion(
         SpringDescription(mass: 0.6, stiffness: 185, damping: 15),

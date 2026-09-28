@@ -45,6 +45,11 @@ destination again reuses its page instead of adding another history entry.
   calculate the lower corners; iOS models missing from the table return zero.
   When the keyboard lifts the tray from the display edge, it uses the base
   radius instead.
+  Call `warmUpTrayDeviceCorners()` while the app starts, before the first tray
+  can be opened. Reading the plugin is a platform channel round trip, so reading
+  it while a tray opens would land a rebuild in the middle of the opening
+  animation. `TraySurface` also starts the read as a safety net, but a tray
+  opened before it resolves uses the `MediaQuery` corners.
   The surface also keeps 24 px inner page padding and a handle. The
   footer stays in a persistent slot whose actual height is measured for sizing.
   The outer left, right, and bottom gaps are 8 logical px. Content and footer
@@ -53,18 +58,29 @@ destination again reuses its page instead of adding another history entry.
   width cap; set `maxWidth` on the geometry resolver to opt into a centered
   width limit.
 - Opening starts the reference spring as soon as the tray mounts, with a
-  0.94-to-1 scale and 1000 px travel. Its first measured content size is applied
-  directly; later content-height changes use a spring. Closing uses the
-  reference 340 ms cubic curve. Incoming pages use a 370 ms fade and 0.96-to-1
-  scale, while outgoing pages fade over 180 ms with an ease-in curve.
+  0.94-to-1 scale. Travel is measured, not fixed: the tray starts exactly one
+  tray height plus its bottom gap below the viewport edge, so the surface is
+  moving on the first animated frame instead of arriving after a fixed
+  overshoot. The `400/34` spring compensates for the shorter distance. Its first
+  measured content size is applied directly; later content-height changes use a
+  spring. Closing uses a 220 ms cubic curve. Incoming pages use a 370 ms fade
+  and 0.96-to-1 scale, while outgoing pages fade over 180 ms with an ease-in
+  curve.
 - Dragging is attached to the handle. It dismisses the tray past 110 px or
-  above 1000 px/s; otherwise it settles back with the gesture velocity.
+  above 1000 px/s; otherwise it settles back with the gesture velocity. The
+  backdrop fades over its own `dragFadeDistance`, not over the travel distance,
+  so it stays readable for short sheets.
 - `context.tray.setView` and `goBack` transition pages without pushing another
   route. The previous view remains available in the stack during the transition.
 - One visual state keeps bounds, radius, scale, backdrop, keyboard/drag offset,
   and page progress synchronized. Motor drives the state through independent
   channels so each transition keeps the reference's spring or timing profile.
   `TrayMotionTheme.family()` provides those profiles and can be customized.
+  Per-frame travel, drag, and keyboard offsets are applied as a transform, so
+  the stack lays out the tray at its resting bounds and never relayouts while it
+  animates. The backdrop folds its progress into the barrier alpha instead of
+  compositing a full-screen layer, and page content sits behind a
+  `RepaintBoundary` so moving the tray does not repaint it.
 
 `TrayHeader` is an optional neutral layout helper; the package does not impose
 Material or Cupertino widgets, app colors, or typography on page content.

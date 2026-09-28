@@ -1,12 +1,11 @@
-import 'package:flutter/rendering.dart'
-    show RenderBox, RenderProxyBox, ShapeBorderClipper;
-import 'package:corner_radius_plugin/corner_radius_plugin.dart';
-import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'dart:async';
+
+import 'package:flutter/rendering.dart' show RenderBox, RenderProxyBox;
 import 'package:flutter/widgets.dart';
 import 'package:motor/motor.dart';
 
 import 'tray_controller.dart';
+import 'tray_corner_radii.dart';
 import 'tray_geometry.dart';
 import 'tray_handle.dart';
 import 'tray_motion_theme.dart';
@@ -43,10 +42,7 @@ class TraySurface extends StatefulWidget {
 }
 
 class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
-  static Future<BorderRadius>? _deviceCornerRadii;
-
   Size _contentSize = Size.zero;
-  BorderRadius? _displayCornerRadii;
   final Map<TrayPage<dynamic>, Size> _contentSizes = {};
   bool _hasInitialMeasurement = false;
   double _footerHeight = 0;
@@ -69,31 +65,11 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   void initState() {
     super.initState();
     widget.controller.addListener(_handleControllerChanged);
-    _loadDisplayCornerRadii();
-  }
-
-  Future<void> _loadDisplayCornerRadii() async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
-      return;
-    }
-
-    try {
-      final radii = await (_deviceCornerRadii ??= _readDeviceCornerRadii());
-      if (!mounted) return;
-      setState(() => _displayCornerRadii = radii);
-    } on Object {
-      // Keep the default geometry if the host app has no plugin implementation.
-    }
-  }
-
-  static Future<BorderRadius> _readDeviceCornerRadii() async {
-    final screenRadius = await CornerRadiusPlugin.init();
-    return BorderRadius.only(
-      topLeft: Radius.circular(screenRadius.topLeft),
-      topRight: Radius.circular(screenRadius.topRight),
-      bottomLeft: Radius.circular(screenRadius.bottomLeft),
-      bottomRight: Radius.circular(screenRadius.bottomRight),
-    );
+    // Safety net for apps that did not call warmUpTrayDeviceCorners during
+    // startup. Deliberately not awaited and never followed by a setState: the
+    // value is read synchronously on each build, so a tray opened before it
+    // resolves keeps the MediaQuery corners instead of rebuilding mid-flight.
+    unawaited(warmUpTrayDeviceCorners());
   }
 
   @override
@@ -417,7 +393,11 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
       builder: (context, _) {
         return LayoutBuilder(
           builder: (context, constraints) {
-            final mediaQuery = MediaQuery.of(context);
+            // Read only the aspects the tray depends on. MediaQuery.of listens
+            // to every aspect, so a text scale or accessibility change would
+            // rebuild the tray and every page builder it holds.
+            final mediaQueryPadding = MediaQuery.paddingOf(context);
+            final viewInsets = MediaQuery.viewInsetsOf(context);
             final currentPage = widget.controller.currentPage;
             final footer =
                 currentPage.hideFooter
@@ -428,17 +408,18 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                         widget.footer;
             final activeFooterHeight = footer == null ? 0.0 : _footerHeight;
             const innerBottomPadding = 24.0;
-            final viewportBottomGap = mediaQuery.viewInsets.bottom + 8.0;
+            final viewportBottomGap = viewInsets.bottom + 8.0;
             final layoutContext = TrayLayoutContext(
               size: constraints.biggest,
-              padding: mediaQuery.padding,
-              viewInsets: mediaQuery.viewInsets,
+              padding: mediaQueryPadding,
+              viewInsets: viewInsets,
               displayCornerRadii:
-                  _displayCornerRadii ?? mediaQuery.displayCornerRadii,
+                  trayDeviceCornerRadii ??
+                  MediaQuery.displayCornerRadiiOf(context),
             );
             final boundedFallbackHeight =
                 (layoutContext.size.height -
-                        mediaQuery.padding.top -
+                        mediaQueryPadding.top -
                         viewportBottomGap -
                         activeFooterHeight -
                         36 -
@@ -500,8 +481,11 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                       routeMotion: widget.motionTheme.route,
                       closeMotion: widget.motionTheme.close,
                       interactiveMotion: widget.motionTheme.interactive,
+                      hiddenGap: widget.motionTheme.hiddenGap,
+                      dragFadeDistance: widget.motionTheme.dragFadeDistance,
+                      viewportHeight: layoutContext.size.height,
                       keyboardInset:
-                          mediaQuery.viewInsets.bottom
+                          viewInsets.bottom
                               .clamp(0.0, double.infinity)
                               .toDouble(),
                       closing:
@@ -550,112 +534,123 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                           fit: StackFit.expand,
                           children: [
                             Positioned.fill(
-                              child: Opacity(
-                                opacity: visualState.backdropOpacity,
-                                child: Semantics(
-                                  label:
-                                      widget.barrierDismissible
-                                          ? 'Dismiss'
-                                          : 'Modal barrier',
-                                  button: widget.barrierDismissible,
+                              child: Semantics(
+                                label:
+                                    widget.barrierDismissible
+                                        ? 'Dismiss'
+                                        : 'Modal barrier',
+                                button: widget.barrierDismissible,
+                                onTap:
+                                    widget.barrierDismissible
+                                        ? _handleBarrierTap
+                                        : null,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
                                   onTap:
                                       widget.barrierDismissible
                                           ? _handleBarrierTap
-                                          : null,
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap:
-                                        widget.barrierDismissible
-                                            ? _handleBarrierTap
-                                            : () {},
-                                    child: ColoredBox(
-                                      color: widget.barrierColor,
+                                          : () {},
+                                  // Fold the presentation progress into the
+                                  // barrier alpha. An Opacity here would composite
+                                  // a full-screen layer on every animated frame.
+                                  child: ColoredBox(
+                                    color: widget.barrierColor.withValues(
+                                      alpha:
+                                          widget.barrierColor.a *
+                                          visualState.backdropOpacity,
                                     ),
                                   ),
                                 ),
                               ),
                             ),
                             Positioned.fromRect(
+                              // Layout uses the resting bounds only. The
+                              // per-frame travel, drag and keyboard offsets go
+                              // through a transform so the stack never relayouts
+                              // while the tray animates.
                               rect: visualState.surfaceRect,
-                              child: Transform.scale(
-                                scale: visualState.surfaceScale,
-                                child: Builder(
-                                  builder: (context) {
-                                    final shape = RoundedSuperellipseBorder(
+                              child: Transform.translate(
+                                offset: visualState.surfaceOffset,
+                                child: Transform.scale(
+                                  scale: visualState.surfaceScale,
+                                  child: DecoratedBox(
+                                    decoration: ShapeDecoration(
+                                      color:
+                                          widget.surfaceColor ??
+                                          const Color(0xFF141414),
+                                      shape: RoundedSuperellipseBorder(
+                                        borderRadius: surfaceRadius,
+                                      ),
+                                    ),
+                                    child: ClipRSuperellipse(
                                       borderRadius: surfaceRadius,
-                                    );
-                                    final surface = DecoratedBox(
-                                      decoration: ShapeDecoration(
-                                        color:
-                                            widget.surfaceColor ??
-                                            const Color(0xFF141414),
-                                        shape: shape,
-                                      ),
-                                      child: ClipPath(
-                                        clipper: ShapeBorderClipper(
-                                          shape: shape,
-                                        ),
-                                        clipBehavior: Clip.antiAlias,
-                                        child: Stack(
-                                          fit: StackFit.expand,
-                                          children: [
-                                            Positioned.fill(
-                                              child: Stack(children: [content]),
-                                            ),
-                                            if (footer != null)
-                                              Positioned(
-                                                bottom: innerBottomPadding,
-                                                left: 24,
-                                                right: 24,
-                                                child: TraySizeObserver(
-                                                  enabled: true,
-                                                  deferCallback: false,
-                                                  onSizeChanged:
-                                                      (size) =>
-                                                          _updateFooterHeight(
-                                                            size,
-                                                            currentPage,
-                                                            layoutContext,
-                                                          ),
-                                                  child: footer,
-                                                ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          Positioned.fill(
+                                            // Isolates the pages from the
+                                            // surface transform, so moving the
+                                            // tray does not repaint them.
+                                            child: RepaintBoundary(
+                                              child: Stack(
+                                                children: [content],
                                               ),
+                                            ),
+                                          ),
+                                          if (footer != null)
                                             Positioned(
-                                              top: 8,
-                                              left: 0,
-                                              right: 0,
-                                              height: 28,
-                                              child: GestureDetector(
-                                                behavior:
-                                                    HitTestBehavior.opaque,
-                                                onVerticalDragStart: _startDrag,
-                                                onVerticalDragUpdate:
-                                                    _updateDrag,
-                                                onVerticalDragEnd:
-                                                    (details) => _settleDrag(
-                                                      details.primaryVelocity ??
-                                                          0,
-                                                    ),
-                                                onVerticalDragCancel:
-                                                    _cancelDrag,
-                                                child: const Align(
-                                                  alignment:
-                                                      Alignment.topCenter,
-                                                  child: Padding(
-                                                    padding: EdgeInsets.only(
-                                                      top: 8,
-                                                    ),
-                                                    child: TrayHandle(),
+                                              bottom: innerBottomPadding,
+                                              left: 24,
+                                              right: 24,
+                                              child: TraySizeObserver(
+                                                enabled: true,
+                                                deferCallback: false,
+                                                onSizeChanged:
+                                                    (size) =>
+                                                        _updateFooterHeight(
+                                                          size,
+                                                          currentPage,
+                                                          layoutContext,
+                                                        ),
+                                                child: footer,
+                                              ),
+                                            ),
+                                          Positioned(
+                                            top: 8,
+                                            left: 0,
+                                            right: 0,
+                                            height: 28,
+                                            child: GestureDetector(
+                                              behavior:
+                                                  HitTestBehavior.opaque,
+                                              onVerticalDragStart:
+                                                  _startDrag,
+                                              onVerticalDragUpdate:
+                                                  _updateDrag,
+                                              onVerticalDragEnd:
+                                                  (details) => _settleDrag(
+                                                    details.primaryVelocity ??
+                                                        0,
                                                   ),
+                                              onVerticalDragCancel:
+                                                  _cancelDrag,
+                                              child: const Align(
+                                                alignment:
+                                                    Alignment.topCenter,
+                                                child: Padding(
+                                                  padding: EdgeInsets.only(
+                                                    top: 8,
+                                                  ),
+                                                  child: TrayHandle(),
                                                 ),
                                               ),
                                             ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ),
-                                    );
-                                    return surface;
-                                  },
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -689,6 +684,9 @@ class _TrayMotionCoordinator extends StatefulWidget {
     required this.routeMotion,
     required this.closeMotion,
     required this.interactiveMotion,
+    required this.hiddenGap,
+    required this.dragFadeDistance,
+    required this.viewportHeight,
     required this.keyboardInset,
     required this.closing,
     required this.onTransitionSettled,
@@ -707,6 +705,16 @@ class _TrayMotionCoordinator extends StatefulWidget {
   final Motion routeMotion;
   final Motion closeMotion;
   final Motion interactiveMotion;
+
+  /// Pixels the tray travels past the viewport bottom once hidden.
+  final double hiddenGap;
+
+  /// Drag distance over which the backdrop fades out.
+  final double dragFadeDistance;
+
+  /// Height of the route viewport the tray is laid out in.
+  final double viewportHeight;
+
   final double keyboardInset;
   final bool closing;
   final ValueChanged<int> onTransitionSettled;
@@ -983,22 +991,35 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
         final geometry = _geometryMotion.value;
         final routeProgress = _presentationMotion.value;
         final clampedProgress = routeProgress.clamp(0.0, 1.0).toDouble();
-        const travel = 1000.0;
-        final dragProgress = (_dragMotion.value / travel).clamp(0.0, 1.0);
+        // Travel only as far as it takes to clear the viewport, plus a small
+        // margin. A fixed long distance keeps the first frames of the spring
+        // below the visible area, which reads as dead time before the tray
+        // appears, and wastes most of the close on pixels nobody sees.
+        final travel =
+            (widget.viewportHeight +
+                    widget.hiddenGap -
+                    geometry.rect.top +
+                    widget.keyboardInset)
+                .clamp(0.0, double.infinity)
+                .toDouble();
+        final dragProgress =
+            widget.dragFadeDistance <= 0
+                ? 0.0
+                : (_dragMotion.value / widget.dragFadeDistance).clamp(0.0, 1.0);
         final keyboardLift = widget.keyboardInset;
-        final projectedRect = geometry.rect.shift(
-          Offset(
-            0,
-            travel * (1 - clampedProgress) + _dragMotion.value - keyboardLift,
-          ),
-        );
         final pageProgresses = <TrayPage<dynamic>, double>{
           for (final entry in _pageMotions.entries)
             entry.key: entry.value.value,
         };
         final visualState = _TrayVisualState(
           geometry: geometry,
-          surfaceRect: projectedRect,
+          surfaceRect: geometry.rect,
+          surfaceOffset: Offset(
+            0,
+            travel * (1 - clampedProgress) +
+                _dragMotion.value -
+                keyboardLift,
+          ),
           surfaceScale: 0.94 + 0.06 * clampedProgress,
           surfaceRadius: geometry.borderRadius,
           backdropOpacity:
@@ -1018,6 +1039,7 @@ class _TrayVisualState {
   const _TrayVisualState({
     required this.geometry,
     required this.surfaceRect,
+    required this.surfaceOffset,
     required this.surfaceScale,
     required this.surfaceRadius,
     required this.backdropOpacity,
@@ -1025,7 +1047,13 @@ class _TrayVisualState {
   });
 
   final TrayGeometry geometry;
+
+  /// Resting bounds of the surface. Stable while the tray animates.
   final Rect surfaceRect;
+
+  /// Per-frame translation applied on top of [surfaceRect].
+  final Offset surfaceOffset;
+
   final double surfaceScale;
   final BorderRadius surfaceRadius;
   final double backdropOpacity;

@@ -1,7 +1,14 @@
+import 'dart:async';
+
 import 'package:dynamic_tray/dynamic_tray.dart';
 import 'package:flutter/material.dart';
 
-void main() => runApp(const DynamicTrayExampleApp());
+void main() {
+  // Resolves the device corner radii over a platform channel. Doing it before
+  // the first frame keeps the tray's opening animation free of rebuilds.
+  unawaited(warmUpTrayDeviceCorners());
+  runApp(const DynamicTrayExampleApp());
+}
 
 class DynamicTrayExampleApp extends StatelessWidget {
   const DynamicTrayExampleApp({super.key});

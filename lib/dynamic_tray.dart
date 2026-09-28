@@ -1,5 +1,6 @@
 export 'src/tray_controller.dart';
 export 'src/tray_api.dart';
+export 'src/tray_corner_radii.dart';
 export 'src/tray_geometry.dart';
 export 'src/tray_handle.dart';
 export 'src/tray_header.dart';
