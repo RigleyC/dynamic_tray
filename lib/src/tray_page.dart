@@ -5,10 +5,12 @@ typedef TrayPageRestorer =
     TrayPage<dynamic> Function(String restorationId, Object? arguments);
 
 enum TrayPageLayout {
-  /// The page determines its own height from intrinsic content.
+  /// The page sizes the tray to its content, up to the available height.
   ///
-  /// Use this for finite, non-scrollable content. Scroll views and slivers
-  /// need a finite viewport and should use [TrayPageLayout.bounded].
+  /// When the content is taller than the screen allows, the tray scrolls the
+  /// page. Content must not use `Expanded` or `Spacer`, which need a bounded
+  /// height. Use [TrayPageLayout.bounded] for slivers or a page that should
+  /// fill the tray and own its scrolling.
   intrinsic,
 
   /// The page receives a finite viewport and owns its scrolling.

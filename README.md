@@ -32,8 +32,9 @@ destination again reuses its page instead of adding another history entry.
 
 ## Layout and behavior
 
-- Intrinsic pages size the tray to their measured content. If content changes
-  after loading, the tray resizes with the reference height spring.
+- Intrinsic pages size the tray to their measured content, up to the available
+  safe height. If content changes after loading, the tray resizes with the
+  reference height spring. Taller content scrolls inside the page.
 - `TrayPageLayout.bounded` gives scrolling pages a finite viewport that fills
   the available safe height. Use it for a root `ListView` or
   `CustomScrollView`; the page owns its scrolling behavior.

@@ -271,9 +271,16 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
           _updateContentSize(pageEntry, size, geometryForSize(size)),
       child: child,
     );
-    child = pageEntry.layout == TrayPageLayout.bounded
-        ? SizedBox(width: width, height: height, child: child)
-        : Align(alignment: Alignment.topCenter, child: child);
+    // Both layouts get a viewport of the available height. Intrinsic pages
+    // size to their content, and scroll when that content is taller than the
+    // viewport. Bounded pages own their scrolling.
+    child = SizedBox(
+      width: width,
+      height: height,
+      child: pageEntry.layout == TrayPageLayout.bounded
+          ? child
+          : SingleChildScrollView(child: child),
+    );
 
     final layer = Offstage(
       offstage: !visible,
