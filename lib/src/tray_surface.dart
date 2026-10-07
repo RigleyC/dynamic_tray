@@ -60,6 +60,11 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   bool _applyingRestoration = false;
   bool _restorationRegistered = false;
 
+  /// Cache of built page widgets to avoid rebuilding on every tray update.
+  /// Pages are keyed by identity, so only new/removed pages trigger rebuilds.
+  List<TrayPage<dynamic>>? _cachedPages;
+  List<Widget>? _cachedPageWidgets;
+
   @override
   String? get restorationId => widget.restorationId;
 
@@ -117,6 +122,8 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   void dispose() {
     widget.controller.removeListener(_handleControllerChanged);
     _sharedElementRegistry.dispose();
+    _cachedPages = null;
+    _cachedPageWidgets = null;
     super.dispose();
   }
 
@@ -341,6 +348,42 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     widget.controller.close();
   }
 
+  List<Widget> _buildPageWidgets(
+    BuildContext context,
+    List<TrayPage<dynamic>> pages,
+  ) {
+    // Check if the page list has changed. If not, reuse cached widgets.
+    if (_cachedPages != null &&
+        _cachedPages!.length == pages.length &&
+        _samePageSequence(_cachedPages!, pages)) {
+      return _cachedPageWidgets!;
+    }
+
+    // Build new widgets and cache them.
+    final pageWidgets = <Widget>[
+      for (final page in pages)
+        KeyedSubtree(
+          key: ObjectKey(page),
+          child: page.builder(context),
+        ),
+    ];
+    _cachedPages = pages;
+    _cachedPageWidgets = pageWidgets;
+    return pageWidgets;
+  }
+
+  bool _samePageSequence(
+    List<TrayPage<dynamic>> first,
+    List<TrayPage<dynamic>> second,
+  ) {
+    if (identical(first, second)) return true;
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (!identical(first[index], second[index])) return false;
+    }
+    return true;
+  }
+
   List<Widget> _buildSharedElementFlights(
     BuildContext context,
     TrayPageTransition? transition,
@@ -427,13 +470,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                   !widget.controller.pages.contains(transition.outgoing))
                 transition.outgoing,
             ];
-            final pageWidgets = [
-              for (final page in pages)
-                KeyedSubtree(
-                  key: ObjectKey(page),
-                  child: page.builder(context),
-                ),
-            ];
+            final pageWidgets = _buildPageWidgets(context, pages);
 
             return ListenableBuilder(
               listenable: _sharedElementRegistry,

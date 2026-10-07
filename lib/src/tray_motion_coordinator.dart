@@ -8,7 +8,6 @@ import 'tray_page.dart';
 
 class _TrayMotionCoordinator extends StatefulWidget {
   const _TrayMotionCoordinator({
-    super.key,
     required this.controller,
     required this.geometry,
     required this.geometryIsMeasured,
