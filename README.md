@@ -54,9 +54,9 @@ destination again reuses its page instead of adding another history entry.
   footer sits 24 px from the bottom in a fixed 65 px slot.
   The outer left, right, and bottom gaps are 8 logical px. Content and footer
   use fixed 24 px bottom padding, regardless of the system safe area. With the
-  keyboard open, the tray sits 8 px above it. The tray is
-  capped at 360 px wide and centered; change `maxWidth` on the geometry
-  resolver to adjust it.
+  keyboard open, the tray sits 8 px above it. There is no default
+  width cap, so the 8 px side gaps hold on every phone; set `maxWidth` on
+  the geometry resolver to opt into a centered width limit.
 - Opening starts the spring as soon as the tray mounts, with a 0.94-to-1
   scale. The first measured content size is applied directly; later
   content-height changes use a spring. Incoming pages fade in with a 0.96-to-1
