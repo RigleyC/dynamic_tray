@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/rendering.dart' show RenderBox, RenderProxyBox;
 import 'package:flutter/widgets.dart';
@@ -45,9 +44,6 @@ class TraySurface extends StatefulWidget {
 }
 
 class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
-  /// Blur strength of the backdrop at full presentation.
-  static const double _maxBackdropBlurSigma = 12;
-
   Size _contentSize = Size.zero;
   final Map<TrayPage<dynamic>, Size> _contentSizes = {};
   bool _hasInitialMeasurement = false;
@@ -525,25 +521,14 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                   onTap: widget.barrierDismissible
                                       ? _handleBarrierTap
                                       : () {},
-                                  // The blur and tint both follow the presentation
-                                  // progress. Fold it into the sigma and alpha
-                                  // directly, since an Opacity here would
-                                  // composite a full-screen layer every frame.
-                                  child: BackdropFilter(
-                                    filter: ImageFilter.blur(
-                                      sigmaX:
-                                          _maxBackdropBlurSigma *
+                                  // Fold the presentation progress into the
+                                  // barrier alpha. An Opacity here would composite
+                                  // a full-screen layer on every animated frame.
+                                  child: ColoredBox(
+                                    color: widget.barrierColor.withValues(
+                                      alpha:
+                                          widget.barrierColor.a *
                                           visualState.backdropOpacity,
-                                      sigmaY:
-                                          _maxBackdropBlurSigma *
-                                          visualState.backdropOpacity,
-                                    ),
-                                    child: ColoredBox(
-                                      color: widget.barrierColor.withValues(
-                                        alpha:
-                                            widget.barrierColor.a *
-                                            visualState.backdropOpacity,
-                                      ),
                                     ),
                                   ),
                                 ),
