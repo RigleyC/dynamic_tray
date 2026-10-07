@@ -20,7 +20,7 @@ final Expando<Object> _activeTrays = Expando<Object>(
 Future<T?> showTray<T>({
   required BuildContext context,
   required TrayPage<T> page,
-  bool useRootNavigator = false,
+  bool useRootNavigator = true,
   TrayGeometryResolver geometryResolver = const DefaultTrayGeometryResolver(),
   TrayMotionTheme? motionTheme,
   Color barrierColor = const Color.fromRGBO(0, 0, 0, 0.3),
@@ -41,7 +41,7 @@ Future<T?> showTray<T>({
     TrayRoute<T>(
       trayController: controller,
       geometryResolver: geometryResolver,
-      motionTheme: motionTheme ?? TrayMotionTheme.family(),
+      motionTheme: motionTheme ?? TrayMotionTheme.original(),
       barrierColor: barrierColor,
       barrierDismissible: barrierDismissible,
       footer: footer,
@@ -158,7 +158,14 @@ class TrayRoute<T> extends PopupRoute<T> {
       return super.didPop(result);
     }
     if (trayController.lifecycle == TrayLifecycle.closing) return false;
-    trayController.dismiss(result);
+    // On system back (Android back button or iOS edge swipe), pop a page if
+    // available, or close the tray if at root. This way the user stays in the
+    // app longer and the tray doesn't reset the whole stack on one back.
+    if (trayController.canPop) {
+      trayController.pop<void>(result); // ignore: unused_result
+    } else {
+      trayController.dismiss(result);
+    }
     return false;
   }
 

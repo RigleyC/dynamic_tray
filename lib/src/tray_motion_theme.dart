@@ -17,6 +17,7 @@ class TrayMotionTheme {
     required this.interactive,
     this.hiddenGap = 16.0,
     this.dragFadeDistance = 240.0,
+    this.fixedTravel,
   });
 
   /// Motor motion for the tray's presentation spring when opening.
@@ -55,30 +56,64 @@ class TrayMotionTheme {
   /// tray's height.
   final double dragFadeDistance;
 
-  factory TrayMotionTheme.family() {
-    return TrayMotionTheme(
-      // The travel distance is now the tray's own height plus its bottom gap,
-      // roughly a third of a fixed long distance. The spring has to be stiffer
-      // to cover those fewer pixels in the same perceptual window.
-      route: const SpringMotion(
-        SpringDescription(mass: 1, stiffness: 400, damping: 34),
+  /// Fixed distance the tray travels when entering and leaving.
+  ///
+  /// When null the distance is measured from the tray's own height.
+  final double? fixedTravel;
+
+  /// Matches the original React Native tray: slow spring in, long fixed travel,
+  /// and the same curve for page entry and exit.
+  factory TrayMotionTheme.original() {
+    return const TrayMotionTheme(
+      route: SpringMotion(
+        SpringDescription(mass: 1, stiffness: 240, damping: 26),
       ),
-      close: const CurvedMotion(
-        Duration(milliseconds: 220),
-        Cubic(0.4, 0, 0.8, 1),
+      close: CurvedMotion(
+        Duration(milliseconds: 340),
+        Cubic(0.55, 0, 1, 0.45),
       ),
-      geometry: const SpringMotion(
+      geometry: SpringMotion(
         SpringDescription(mass: 0.6, stiffness: 185, damping: 15),
       ),
-      effects: const CurvedMotion(
+      effects: CurvedMotion(
         Duration(milliseconds: 370),
         Cubic(0.26, 0.08, 0.25, 1),
       ),
-      effectsExit: const CurvedMotion(
+      effectsExit: CurvedMotion(
+        Duration(milliseconds: 370),
+        Cubic(0.26, 0.08, 0.25, 1),
+      ),
+      interactive: SpringMotion(
+        SpringDescription(mass: 1, stiffness: 260, damping: 24),
+      ),
+      fixedTravel: 1000,
+      dragFadeDistance: 1000,
+    );
+  }
+
+  /// Faster than [TrayMotionTheme.original]. The travel is measured, so the
+  /// spring is stiffer to cover fewer pixels in the same perceptual window.
+  factory TrayMotionTheme.snappy() {
+    return const TrayMotionTheme(
+      route: SpringMotion(
+        SpringDescription(mass: 1, stiffness: 400, damping: 34),
+      ),
+      close: CurvedMotion(
+        Duration(milliseconds: 220),
+        Cubic(0.4, 0, 0.8, 1),
+      ),
+      geometry: SpringMotion(
+        SpringDescription(mass: 0.6, stiffness: 185, damping: 15),
+      ),
+      effects: CurvedMotion(
+        Duration(milliseconds: 370),
+        Cubic(0.26, 0.08, 0.25, 1),
+      ),
+      effectsExit: CurvedMotion(
         Duration(milliseconds: 180),
         Cubic(0.42, 0, 1, 1),
       ),
-      interactive: const SpringMotion(
+      interactive: SpringMotion(
         SpringDescription(mass: 1, stiffness: 260, damping: 24),
       ),
     );

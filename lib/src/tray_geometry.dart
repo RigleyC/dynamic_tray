@@ -99,7 +99,7 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
   const DefaultTrayGeometryResolver({
     this.horizontalMargin = 8,
     this.bottomMargin = 8,
-    this.maxWidth = double.infinity,
+    this.maxWidth = 360,
     this.radius = 38,
   });
 
@@ -109,7 +109,7 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
   /// Gap from the viewport bottom, or from the keyboard when it is open.
   final double bottomMargin;
 
-  /// Centered width limit. Infinite by default to preserve the side gaps.
+  /// Centered width limit. Wider viewports keep the tray at this width.
   final double maxWidth;
 
   /// Base radius for the top corners and fallback display geometry.

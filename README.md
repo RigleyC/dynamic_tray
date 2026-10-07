@@ -51,12 +51,12 @@ destination again reuses its page instead of adding another history entry.
   animation. `TraySurface` also starts the read as a safety net, but a tray
   opened before it resolves uses the `MediaQuery` corners.
   The surface also keeps 24 px inner page padding and a handle. The
-  footer stays in a persistent slot whose actual height is measured for sizing.
+  footer sits 24 px from the bottom in a fixed 65 px slot.
   The outer left, right, and bottom gaps are 8 logical px. Content and footer
   use fixed 24 px bottom padding, regardless of the system safe area. With the
-  keyboard open, the tray sits 8 px above it. There is no default
-  width cap; set `maxWidth` on the geometry resolver to opt into a centered
-  width limit.
+  keyboard open, the tray sits 8 px above it. The tray is
+  capped at 360 px wide and centered; change `maxWidth` on the geometry
+  resolver to adjust it.
 - Opening starts the reference spring as soon as the tray mounts, with a
   0.94-to-1 scale. Travel is measured, not fixed: the tray starts exactly one
   tray height plus its bottom gap below the viewport edge, so the surface is
@@ -75,7 +75,8 @@ destination again reuses its page instead of adding another history entry.
 - One visual state keeps bounds, radius, scale, backdrop, keyboard/drag offset,
   and page progress synchronized. Motor drives the state through independent
   channels so each transition keeps the reference's spring or timing profile.
-  `TrayMotionTheme.family()` provides those profiles and can be customized.
+  `TrayMotionTheme.original()` (default) matches the reference timings;
+  `TrayMotionTheme.snappy()` is a faster profile. Both can be customized.
   Per-frame travel, drag, and keyboard offsets are applied as a transform, so
   the stack lays out the tray at its resting bounds and never relayouts while it
   animates. The backdrop folds its progress into the barrier alpha instead of

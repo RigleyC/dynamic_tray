@@ -25,6 +25,8 @@ class TrayController extends ChangeNotifier {
   Route<dynamic>? _route;
   Object? _dismissResult;
   bool _routePopAuthorized = false;
+  VoidCallback? _completePendingPop;
+  final List<_QueuedNavigation> _navigationQueue = [];
 
   TrayPage<dynamic> get currentPage => _entries.last.page;
   TrayLifecycle get lifecycle => _lifecycle;
@@ -44,7 +46,14 @@ class TrayController extends ChangeNotifier {
       if (identical(_transition!.incoming, page)) {
         return _entries.last.completer.future as Future<T?>;
       }
-      return Future<T?>.value();
+      // Enqueue while a transition is in progress.
+      final entry = _TrayEntry<T>(page);
+      _navigationQueue.add(_QueuedNavigation(
+        page: page,
+        completer: entry.completer,
+        isPush: true,
+      ));
+      return entry.completer.future;
     }
     final outgoing = currentPage;
     final entry = _TrayEntry<T>(page);
@@ -126,6 +135,17 @@ class TrayController extends ChangeNotifier {
 
   bool pop<T>([T? result]) {
     if (_transition != null) {
+      // Enqueue while a transition is in progress.
+      if (canPop) {
+        final entry = _TrayEntry<T>(_entries[_entries.length - 2].page);
+        _navigationQueue.add(_QueuedNavigation(
+          page: entry.page,
+          completer: entry.completer,
+          isPush: false,
+          result: result,
+        ));
+        return true;
+      }
       return false;
     }
     if (!canPop) {
@@ -136,7 +156,9 @@ class TrayController extends ChangeNotifier {
     final outgoing = _entries.last.page;
     final incoming = _entries[_entries.length - 2].page;
     final entry = _entries.removeLast();
-    entry.complete(result);
+    // Like Navigator, the result is delivered only after the page has settled,
+    // so callers can safely show dialogs or push routes right after awaiting.
+    _completePendingPop = () => entry.complete(result);
     _transition = TrayPageTransition(
       id: _nextTransitionId++,
       outgoing: outgoing,
@@ -194,6 +216,7 @@ class TrayController extends ChangeNotifier {
       ..clear()
       ..addAll(restoredPages);
     _transition = null;
+    _flushPendingPop();
     if (notify) {
       notifyListeners();
     }
@@ -235,6 +258,58 @@ class TrayController extends ChangeNotifier {
     }
     _transition = null;
     notifyListeners();
+    _flushPendingPop();
+    _processQueuedNavigation();
+  }
+
+  void _processQueuedNavigation() {
+    if (_navigationQueue.isEmpty || _transition != null) {
+      return;
+    }
+    final queued = _navigationQueue.removeAt(0);
+    if (queued.isPush) {
+      _validatePage(queued.page);
+      if (identical(currentPage, queued.page)) {
+        queued.completer.complete(null);
+        _processQueuedNavigation();
+        return;
+      }
+      final outgoing = currentPage;
+      _entries.add(_TrayEntry<dynamic>(queued.page));
+      if (!_visitedPages.contains(queued.page)) {
+        _visitedPages.add(queued.page);
+      }
+      _transition = TrayPageTransition(
+        id: _nextTransitionId++,
+        outgoing: outgoing,
+        incoming: queued.page,
+        isPush: true,
+      );
+      notifyListeners();
+    } else {
+      if (!canPop) {
+        queued.completer.complete(null);
+        _processQueuedNavigation();
+        return;
+      }
+      final outgoing = _entries.last.page;
+      final incoming = _entries[_entries.length - 2].page;
+      _entries.removeLast();
+      _completePendingPop = () => queued.completer.complete(queued.result);
+      _transition = TrayPageTransition(
+        id: _nextTransitionId++,
+        outgoing: outgoing,
+        incoming: incoming,
+        isPush: false,
+      );
+      notifyListeners();
+    }
+  }
+
+  void _flushPendingPop() {
+    final complete = _completePendingPop;
+    _completePendingPop = null;
+    complete?.call();
   }
 
   void dismiss<T>([T? result]) {
@@ -292,6 +367,7 @@ class TrayController extends ChangeNotifier {
 
   @internal
   void completeRoute([Object? result]) {
+    _flushPendingPop();
     while (_entries.length > 1) {
       _entries.removeLast().complete(null);
     }
@@ -312,6 +388,20 @@ class TrayController extends ChangeNotifier {
 }
 
 enum TrayLifecycle { opening, open, closing, closed }
+
+class _QueuedNavigation {
+  const _QueuedNavigation({
+    required this.page,
+    required this.completer,
+    required this.isPush,
+    this.result,
+  });
+
+  final TrayPage<dynamic> page;
+  final Completer<dynamic> completer;
+  final bool isPush;
+  final Object? result;
+}
 
 class _TrayEntry<T> {
   _TrayEntry(this.page);
