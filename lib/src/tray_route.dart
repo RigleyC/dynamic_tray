@@ -162,7 +162,7 @@ class TrayRoute<T> extends PopupRoute<T> {
     // available, or close the tray if at root. This way the user stays in the
     // app longer and the tray doesn't reset the whole stack on one back.
     if (trayController.canPop) {
-      trayController.pop<void>(result); // ignore: unused_result
+      trayController.goBack();
     } else {
       trayController.dismiss(result);
     }

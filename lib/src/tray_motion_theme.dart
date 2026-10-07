@@ -1,6 +1,32 @@
 import 'package:flutter/animation.dart';
 import 'package:motor/motor.dart';
 
+/// How far the tray travels below the viewport when entering and leaving.
+sealed class TrayTravel {
+  const TrayTravel();
+
+  /// Travels exactly out of view: the tray's own height plus [hiddenGap].
+  ///
+  /// A hidden tray should sit clear of the edge rather than flush with it,
+  /// otherwise the last frame before it disappears clips against the viewport.
+  const factory TrayTravel.measured({double hiddenGap}) = MeasuredTrayTravel;
+
+  /// Travels a fixed [distance], regardless of the tray's height.
+  const factory TrayTravel.fixed(double distance) = FixedTrayTravel;
+}
+
+final class MeasuredTrayTravel extends TrayTravel {
+  const MeasuredTrayTravel({this.hiddenGap = 16});
+
+  final double hiddenGap;
+}
+
+final class FixedTrayTravel extends TrayTravel {
+  const FixedTrayTravel(this.distance);
+
+  final double distance;
+}
+
 class TrayMotionTheme {
   const TrayMotionTheme({
     required this.route,
@@ -15,9 +41,8 @@ class TrayMotionTheme {
       Cubic(0.42, 0, 1, 1),
     ),
     required this.interactive,
-    this.hiddenGap = 16.0,
+    this.travel = const TrayTravel.measured(),
     this.dragFadeDistance = 240.0,
-    this.fixedTravel,
   });
 
   /// Motor motion for the tray's presentation spring when opening.
@@ -25,10 +50,8 @@ class TrayMotionTheme {
 
   /// Motor motion for the tray's timed close.
   ///
-  /// The travel distance is measured, not fixed, so almost the whole curve maps
-  /// to pixels the user can see. The shape is therefore close to linear with a
-  /// mild ease-in: a stronger ease-out would clear the screen early and leave a
-  /// long tail where the tray is already gone.
+  /// Pair its curve with [travel]. With a measured travel almost the whole
+  /// curve maps to visible pixels, so a near-linear mild ease-in reads best.
   final Motion close;
 
   /// Motor motion for changes to the tray's bounds and corner radius.
@@ -43,11 +66,8 @@ class TrayMotionTheme {
   /// Motion used to settle interactive drag gestures.
   final Motion interactive;
 
-  /// Pixels the tray travels past the bottom of the viewport once hidden.
-  ///
-  /// A hidden tray should sit clear of the edge rather than flush with it,
-  /// otherwise the last frame before it disappears clips against the viewport.
-  final double hiddenGap;
+  /// How far the tray travels when entering and leaving.
+  final TrayTravel travel;
 
   /// Drag distance over which the backdrop fades out.
   ///
@@ -56,11 +76,6 @@ class TrayMotionTheme {
   /// tray's height.
   final double dragFadeDistance;
 
-  /// Fixed distance the tray travels when entering and leaving.
-  ///
-  /// When null the distance is measured from the tray's own height.
-  final double? fixedTravel;
-
   /// Matches the original React Native tray: slow spring in, long fixed travel,
   /// and the same curve for page entry and exit.
   factory TrayMotionTheme.original() {
@@ -68,10 +83,7 @@ class TrayMotionTheme {
       route: SpringMotion(
         SpringDescription(mass: 1, stiffness: 240, damping: 26),
       ),
-      close: CurvedMotion(
-        Duration(milliseconds: 340),
-        Cubic(0.55, 0, 1, 0.45),
-      ),
+      close: CurvedMotion(Duration(milliseconds: 340), Cubic(0.55, 0, 1, 0.45)),
       geometry: SpringMotion(
         SpringDescription(mass: 0.6, stiffness: 185, damping: 15),
       ),
@@ -86,7 +98,7 @@ class TrayMotionTheme {
       interactive: SpringMotion(
         SpringDescription(mass: 1, stiffness: 260, damping: 24),
       ),
-      fixedTravel: 1000,
+      travel: TrayTravel.fixed(1000),
       dragFadeDistance: 1000,
     );
   }
@@ -98,10 +110,7 @@ class TrayMotionTheme {
       route: SpringMotion(
         SpringDescription(mass: 1, stiffness: 400, damping: 34),
       ),
-      close: CurvedMotion(
-        Duration(milliseconds: 220),
-        Cubic(0.4, 0, 0.8, 1),
-      ),
+      close: CurvedMotion(Duration(milliseconds: 220), Cubic(0.4, 0, 0.8, 1)),
       geometry: SpringMotion(
         SpringDescription(mass: 0.6, stiffness: 185, damping: 15),
       ),

@@ -1,13 +1,8 @@
-import 'package:flutter/material.dart';
-import 'package:motor/motor.dart';
-
-import 'tray_controller.dart';
-import 'tray_geometry.dart';
-import 'tray_motion_theme.dart';
-import 'tray_page.dart';
+part of 'tray_surface.dart';
 
 class _TrayMotionCoordinator extends StatefulWidget {
   const _TrayMotionCoordinator({
+    super.key,
     required this.controller,
     required this.geometry,
     required this.geometryIsMeasured,
@@ -19,9 +14,8 @@ class _TrayMotionCoordinator extends StatefulWidget {
     required this.routeMotion,
     required this.closeMotion,
     required this.interactiveMotion,
-    required this.hiddenGap,
     required this.dragFadeDistance,
-    required this.fixedTravel,
+    required this.travel,
     required this.viewportHeight,
     required this.keyboardInset,
     required this.closing,
@@ -42,14 +36,10 @@ class _TrayMotionCoordinator extends StatefulWidget {
   final Motion closeMotion;
   final Motion interactiveMotion;
 
-  /// Pixels the tray travels past the viewport bottom once hidden.
-  final double hiddenGap;
-
   /// Drag distance over which the backdrop fades out.
   final double dragFadeDistance;
 
-  /// When non-null, replaces the measured travel distance.
-  final double? fixedTravel;
+  final TrayTravel travel;
 
   /// Height of the route viewport the tray is laid out in.
   final double viewportHeight;
@@ -151,8 +141,10 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   void didUpdateWidget(covariant _TrayMotionCoordinator oldWidget) {
     super.didUpdateWidget(oldWidget);
     final geometryChanged = oldWidget.geometry != widget.geometry;
-    final pageSequenceChanged =
-        !_samePageSequence(oldWidget.pages, widget.pages);
+    final pageSequenceChanged = !_samePageSequence(
+      oldWidget.pages,
+      widget.pages,
+    );
     final transitionChanged = oldWidget.transition?.id != widget.transition?.id;
     final closingStarted = !oldWidget.closing && widget.closing;
     if (closingStarted) {
@@ -235,9 +227,9 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
           // package only applies this crossfade to subsequent view changes.
           initialValue:
               widget.transition == null &&
-                      identical(page, widget.controller.currentPage)
-                  ? 1
-                  : 0,
+                  identical(page, widget.controller.currentPage)
+              ? 1
+              : 0,
         )..addStatusListener(_handlePageMotionStatus);
       });
     }
@@ -249,8 +241,9 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
     }
     _transitionId = widget.transition?.id;
     for (final entry in _pageMotions.entries) {
-      final target =
-          identical(entry.key, widget.controller.currentPage) ? 1.0 : 0.0;
+      final target = identical(entry.key, widget.controller.currentPage)
+          ? 1.0
+          : 0.0;
       if (_pageTargets[entry.key] == target) {
         continue;
       }
@@ -259,8 +252,9 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
           !entry.value.isAnimating) {
         continue;
       }
-      final motion =
-          target == 1 ? widget.effectsMotion : widget.effectsExitMotion;
+      final motion = target == 1
+          ? widget.effectsMotion
+          : widget.effectsExitMotion;
       if (entry.value.motion != motion) {
         entry.value.motion = motion;
       }
@@ -293,8 +287,9 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   }
 
   void dragTo(double translationY) {
-    _dragMotion.value =
-        (_dragOrigin + translationY).clamp(0.0, double.infinity).toDouble();
+    _dragMotion.value = (_dragOrigin + translationY)
+        .clamp(0.0, double.infinity)
+        .toDouble();
   }
 
   void settleDrag(double velocityY) {
@@ -330,22 +325,21 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
         final geometry = _geometryMotion.value;
         final routeProgress = _presentationMotion.value;
         final clampedProgress = routeProgress.clamp(0.0, 1.0).toDouble();
-        // Travel only as far as it takes to clear the viewport, plus a small
-        // margin. A fixed long distance keeps the first frames of the spring
-        // below the visible area, which reads as dead time before the tray
-        // appears, and wastes most of the close on pixels nobody sees.
-        final travel =
-            widget.fixedTravel ??
+        final travel = switch (widget.travel) {
+          FixedTrayTravel(:final distance) => distance,
+          // Clears the viewport and no more, so no frame of the spring is
+          // spent below the visible area.
+          MeasuredTrayTravel(:final hiddenGap) =>
             (widget.viewportHeight +
-                    widget.hiddenGap -
+                    hiddenGap -
                     geometry.rect.top +
                     widget.keyboardInset)
                 .clamp(0.0, double.infinity)
-                .toDouble();
-        final dragProgress =
-            widget.dragFadeDistance <= 0
-                ? 0.0
-                : (_dragMotion.value / widget.dragFadeDistance).clamp(0.0, 1.0);
+                .toDouble(),
+        };
+        final dragProgress = widget.dragFadeDistance <= 0
+            ? 0.0
+            : (_dragMotion.value / widget.dragFadeDistance).clamp(0.0, 1.0);
         final keyboardLift = widget.keyboardInset;
         final pageProgresses = <TrayPage<dynamic>, double>{
           for (final entry in _pageMotions.entries)
@@ -356,16 +350,13 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
           surfaceRect: geometry.rect,
           surfaceOffset: Offset(
             0,
-            travel * (1 - clampedProgress) +
-                _dragMotion.value -
-                keyboardLift,
+            travel * (1 - clampedProgress) + _dragMotion.value - keyboardLift,
           ),
           surfaceScale: 0.94 + 0.06 * clampedProgress,
           surfaceRadius: geometry.borderRadius,
-          backdropOpacity:
-              (clampedProgress * (1 - 0.6 * dragProgress))
-                  .clamp(0.0, 1.0)
-                  .toDouble(),
+          backdropOpacity: (clampedProgress * (1 - 0.6 * dragProgress))
+              .clamp(0.0, 1.0)
+              .toDouble(),
           pageProgresses: pageProgresses,
         );
         final content = widget.contentBuilder(context, visualState);

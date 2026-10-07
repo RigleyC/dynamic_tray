@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -26,7 +27,10 @@ class TrayController extends ChangeNotifier {
   Object? _dismissResult;
   bool _routePopAuthorized = false;
   VoidCallback? _completePendingPop;
-  final List<_QueuedNavigation> _navigationQueue = [];
+
+  /// Navigation requested while a transition owns the surface. Each entry runs
+  /// once the current transition settles, in request order.
+  final List<({VoidCallback run, VoidCallback cancel})> _pendingNavigation = [];
 
   TrayPage<dynamic> get currentPage => _entries.last.page;
   TrayLifecycle get lifecycle => _lifecycle;
@@ -35,7 +39,9 @@ class TrayController extends ChangeNotifier {
   bool get isRestorable => _pageRestorer != null;
 
   @internal
-  List<TrayPage<dynamic>> get pages => List.unmodifiable(_visitedPages);
+  late final List<TrayPage<dynamic>> pages = UnmodifiableListView(
+    _visitedPages,
+  );
 
   Future<T?> push<T>(TrayPage<T> page) {
     _validatePage(page);
@@ -46,14 +52,12 @@ class TrayController extends ChangeNotifier {
       if (identical(_transition!.incoming, page)) {
         return _entries.last.completer.future as Future<T?>;
       }
-      // Enqueue while a transition is in progress.
-      final entry = _TrayEntry<T>(page);
-      _navigationQueue.add(_QueuedNavigation(
-        page: page,
-        completer: entry.completer,
-        isPush: true,
+      final completer = Completer<T?>();
+      _pendingNavigation.add((
+        run: () => completer.complete(push<T>(page)),
+        cancel: () => completer.complete(null),
       ));
-      return entry.completer.future;
+      return completer.future;
     }
     final outgoing = currentPage;
     final entry = _TrayEntry<T>(page);
@@ -91,17 +95,16 @@ class TrayController extends ChangeNotifier {
     if (_transition != null) {
       return;
     }
-    final existingPage =
-        viewId == null
-            ? _visitedPages
-                .where(
-                  (page) =>
-                      page.builder == builder &&
-                      page.footerBuilder == footer &&
-                      page.layout == layout,
-                )
-                .firstOrNull
-            : _visitedPages.where((page) => page.viewId == viewId).firstOrNull;
+    final existingPage = viewId == null
+        ? _visitedPages
+              .where(
+                (page) =>
+                    page.builder == builder &&
+                    page.footerBuilder == footer &&
+                    page.layout == layout,
+              )
+              .firstOrNull
+        : _visitedPages.where((page) => page.viewId == viewId).firstOrNull;
     if (viewId == null &&
         currentPage.builder == builder &&
         currentPage.footerBuilder == footer &&
@@ -135,18 +138,8 @@ class TrayController extends ChangeNotifier {
 
   bool pop<T>([T? result]) {
     if (_transition != null) {
-      // Enqueue while a transition is in progress.
-      if (canPop) {
-        final entry = _TrayEntry<T>(_entries[_entries.length - 2].page);
-        _navigationQueue.add(_QueuedNavigation(
-          page: entry.page,
-          completer: entry.completer,
-          isPush: false,
-          result: result,
-        ));
-        return true;
-      }
-      return false;
+      _pendingNavigation.add((run: () => pop<T>(result), cancel: () {}));
+      return true;
     }
     if (!canPop) {
       dismiss(result);
@@ -217,6 +210,7 @@ class TrayController extends ChangeNotifier {
       ..addAll(restoredPages);
     _transition = null;
     _flushPendingPop();
+    _cancelPendingNavigation();
     if (notify) {
       notifyListeners();
     }
@@ -259,50 +253,19 @@ class TrayController extends ChangeNotifier {
     _transition = null;
     notifyListeners();
     _flushPendingPop();
-    _processQueuedNavigation();
+    _runPendingNavigation();
   }
 
-  void _processQueuedNavigation() {
-    if (_navigationQueue.isEmpty || _transition != null) {
-      return;
-    }
-    final queued = _navigationQueue.removeAt(0);
-    if (queued.isPush) {
-      _validatePage(queued.page);
-      if (identical(currentPage, queued.page)) {
-        queued.completer.complete(null);
-        _processQueuedNavigation();
-        return;
-      }
-      final outgoing = currentPage;
-      _entries.add(_TrayEntry<dynamic>(queued.page));
-      if (!_visitedPages.contains(queued.page)) {
-        _visitedPages.add(queued.page);
-      }
-      _transition = TrayPageTransition(
-        id: _nextTransitionId++,
-        outgoing: outgoing,
-        incoming: queued.page,
-        isPush: true,
-      );
-      notifyListeners();
-    } else {
-      if (!canPop) {
-        queued.completer.complete(null);
-        _processQueuedNavigation();
-        return;
-      }
-      final outgoing = _entries.last.page;
-      final incoming = _entries[_entries.length - 2].page;
-      _entries.removeLast();
-      _completePendingPop = () => queued.completer.complete(queued.result);
-      _transition = TrayPageTransition(
-        id: _nextTransitionId++,
-        outgoing: outgoing,
-        incoming: incoming,
-        isPush: false,
-      );
-      notifyListeners();
+  void _runPendingNavigation() {
+    if (_transition != null || _pendingNavigation.isEmpty) return;
+    _pendingNavigation.removeAt(0).run();
+  }
+
+  void _cancelPendingNavigation() {
+    final pending = List.of(_pendingNavigation);
+    _pendingNavigation.clear();
+    for (final navigation in pending) {
+      navigation.cancel();
     }
   }
 
@@ -368,6 +331,7 @@ class TrayController extends ChangeNotifier {
   @internal
   void completeRoute([Object? result]) {
     _flushPendingPop();
+    _cancelPendingNavigation();
     while (_entries.length > 1) {
       _entries.removeLast().complete(null);
     }
@@ -388,20 +352,6 @@ class TrayController extends ChangeNotifier {
 }
 
 enum TrayLifecycle { opening, open, closing, closed }
-
-class _QueuedNavigation {
-  const _QueuedNavigation({
-    required this.page,
-    required this.completer,
-    required this.isPush,
-    this.result,
-  });
-
-  final TrayPage<dynamic> page;
-  final Completer<dynamic> completer;
-  final bool isPush;
-  final Object? result;
-}
 
 class _TrayEntry<T> {
   _TrayEntry(this.page);

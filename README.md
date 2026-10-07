@@ -57,15 +57,19 @@ destination again reuses its page instead of adding another history entry.
   keyboard open, the tray sits 8 px above it. The tray is
   capped at 360 px wide and centered; change `maxWidth` on the geometry
   resolver to adjust it.
-- Opening starts the reference spring as soon as the tray mounts, with a
-  0.94-to-1 scale. Travel is measured, not fixed: the tray starts exactly one
-  tray height plus its bottom gap below the viewport edge, so the surface is
-  moving on the first animated frame instead of arriving after a fixed
-  overshoot. The `400/34` spring compensates for the shorter distance. Its first
-  measured content size is applied directly; later content-height changes use a
-  spring. Closing uses a 220 ms cubic curve. Incoming pages use a 370 ms fade
-  and 0.96-to-1 scale, while outgoing pages fade over 180 ms with an ease-in
-  curve.
+- Opening starts the spring as soon as the tray mounts, with a 0.94-to-1
+  scale. The first measured content size is applied directly; later
+  content-height changes use a spring. Incoming pages fade in with a 0.96-to-1
+  scale.
+- `TrayMotionTheme.original()` matches the reference: a `240/26` spring over
+  `TrayTravel.fixed(1000)`, a 340 ms close, and the same 370 ms curve for
+  page entry and exit. `TrayMotionTheme.snappy()` uses
+  `TrayTravel.measured()` instead, so the tray starts exactly one tray height
+  plus a small gap below the viewport and moves on the first frame, with a
+  stiffer `400/34` spring, a 220 ms close and a 180 ms page exit.
+- System back returns to the previous page, and closes the tray at the root.
+  Navigation requested during a page transition runs once it settles, and a
+  popped page's result is delivered after the transition, like `Navigator`.
 - Dragging is attached to the handle. It dismisses the tray past 110 px or
   above 1000 px/s; otherwise it settles back with the gesture velocity. The
   backdrop fades over its own `dragFadeDistance`, not over the travel distance,

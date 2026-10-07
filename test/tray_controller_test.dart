@@ -11,10 +11,13 @@ void main() {
     final controller = TrayController(initialPage: page('root'));
 
     final resultFuture = controller.push<String>(page('child'));
+    controller.completePageTransition(controller.transition!.id);
 
     expect(controller.canPop, isTrue);
 
     controller.pop('selected');
+    // The result is delivered once the page has settled, like Navigator.
+    controller.completePageTransition(controller.transition!.id);
 
     expect(await resultFuture, 'selected');
     expect(controller.canPop, isFalse);

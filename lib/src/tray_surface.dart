@@ -8,11 +8,12 @@ import 'tray_controller.dart';
 import 'tray_corner_radii.dart';
 import 'tray_geometry.dart';
 import 'tray_handle.dart';
-import 'tray_motion_coordinator.dart';
 import 'tray_motion_theme.dart';
 import 'tray_page.dart';
 import 'tray_restoration.dart';
 import 'tray_shared_element.dart';
+
+part 'tray_motion_coordinator.dart';
 
 class TraySurface extends StatefulWidget {
   const TraySurface({
@@ -46,6 +47,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   Size _contentSize = Size.zero;
   final Map<TrayPage<dynamic>, Size> _contentSizes = {};
   bool _hasInitialMeasurement = false;
+
   /// Fixed space reserved for the footer, independent of its real height.
   static const double _footerReserve = 65;
   bool _isDragging = false;
@@ -59,11 +61,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
       TrayRestorableSnapshot(widget.controller.restorationSnapshot);
   bool _applyingRestoration = false;
   bool _restorationRegistered = false;
-
-  /// Cache of built page widgets to avoid rebuilding on every tray update.
-  /// Pages are keyed by identity, so only new/removed pages trigger rebuilds.
-  List<TrayPage<dynamic>>? _cachedPages;
-  List<Widget>? _cachedPageWidgets;
 
   @override
   String? get restorationId => widget.restorationId;
@@ -122,8 +119,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   void dispose() {
     widget.controller.removeListener(_handleControllerChanged);
     _sharedElementRegistry.dispose();
-    _cachedPages = null;
-    _cachedPageWidgets = null;
     super.dispose();
   }
 
@@ -158,10 +153,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                 innerBottomPadding)
             .clamp(0.0, layoutContext.size.height)
             .toDouble();
-    final measuredContentSize =
-        page.layout == TrayPageLayout.bounded
-            ? Size(size.width, boundedFallbackHeight)
-            : size;
+    final measuredContentSize = page.layout == TrayPageLayout.bounded
+        ? Size(size.width, boundedFallbackHeight)
+        : size;
     return widget.geometryResolver.resolve(
       layoutContext,
       Size(
@@ -273,14 +267,13 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     child = TraySizeObserver(
       enabled: measure,
       deferCallback: false,
-      onSizeChanged:
-          (size) => _updateContentSize(pageEntry, size, geometryForSize(size)),
+      onSizeChanged: (size) =>
+          _updateContentSize(pageEntry, size, geometryForSize(size)),
       child: child,
     );
-    child =
-        pageEntry.layout == TrayPageLayout.bounded
-            ? SizedBox(width: width, height: height, child: child)
-            : Align(alignment: Alignment.topCenter, child: child);
+    child = pageEntry.layout == TrayPageLayout.bounded
+        ? SizedBox(width: width, height: height, child: child)
+        : Align(alignment: Alignment.topCenter, child: child);
 
     final layer = Offstage(
       offstage: !visible,
@@ -311,8 +304,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     required Map<TrayPage<dynamic>, double> pageProgresses,
     required TrayGeometry Function(TrayPage<dynamic>, Size) geometryForSize,
   }) {
-    final outgoingIndex =
-        transition == null ? -1 : pages.indexOf(transition.outgoing);
+    final outgoingIndex = transition == null
+        ? -1
+        : pages.indexOf(transition.outgoing);
     final layers = <Widget>[];
     for (var index = 0; index < pageWidgets.length; index++) {
       final page = pages[index];
@@ -346,42 +340,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
       return;
     }
     widget.controller.close();
-  }
-
-  List<Widget> _buildPageWidgets(
-    BuildContext context,
-    List<TrayPage<dynamic>> pages,
-  ) {
-    // Check if the page list has changed. If not, reuse cached widgets.
-    if (_cachedPages != null &&
-        _cachedPages!.length == pages.length &&
-        _samePageSequence(_cachedPages!, pages)) {
-      return _cachedPageWidgets!;
-    }
-
-    // Build new widgets and cache them.
-    final pageWidgets = <Widget>[
-      for (final page in pages)
-        KeyedSubtree(
-          key: ObjectKey(page),
-          child: page.builder(context),
-        ),
-    ];
-    _cachedPages = pages;
-    _cachedPageWidgets = pageWidgets;
-    return pageWidgets;
-  }
-
-  bool _samePageSequence(
-    List<TrayPage<dynamic>> first,
-    List<TrayPage<dynamic>> second,
-  ) {
-    if (identical(first, second)) return true;
-    if (first.length != second.length) return false;
-    for (var index = 0; index < first.length; index++) {
-      if (!identical(first[index], second[index])) return false;
-    }
-    return true;
   }
 
   List<Widget> _buildSharedElementFlights(
@@ -418,13 +376,12 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
             final mediaQueryPadding = MediaQuery.paddingOf(context);
             final viewInsets = MediaQuery.viewInsetsOf(context);
             final currentPage = widget.controller.currentPage;
-            final footer =
-                currentPage.hideFooter
-                    ? null
-                    : currentPage.footerBuilder?.call(context) ??
-                        currentPage.footer ??
-                        widget.footerBuilder?.call(context) ??
-                        widget.footer;
+            final footer = currentPage.hideFooter
+                ? null
+                : currentPage.footerBuilder?.call(context) ??
+                      currentPage.footer ??
+                      widget.footerBuilder?.call(context) ??
+                      widget.footer;
             final activeFooterHeight = footer == null ? 0.0 : _footerReserve;
             const innerBottomPadding = 24.0;
             final viewportBottomGap = viewInsets.bottom + 8.0;
@@ -447,11 +404,11 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                     .toDouble();
             final measuredContentSize =
                 currentPage.layout == TrayPageLayout.bounded
-                    ? Size(
-                      _contentSizes[currentPage]?.width ?? _contentSize.width,
-                      boundedFallbackHeight,
-                    )
-                    : _contentSizes[currentPage] ?? _contentSize;
+                ? Size(
+                    _contentSizes[currentPage]?.width ?? _contentSize.width,
+                    boundedFallbackHeight,
+                  )
+                : _contentSizes[currentPage] ?? _contentSize;
             final contentSize = Size(
               measuredContentSize.width,
               measuredContentSize.height +
@@ -470,7 +427,13 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                   !widget.controller.pages.contains(transition.outgoing))
                 transition.outgoing,
             ];
-            final pageWidgets = _buildPageWidgets(context, pages);
+            final pageWidgets = [
+              for (final page in pages)
+                KeyedSubtree(
+                  key: ObjectKey(page),
+                  child: page.builder(context),
+                ),
+            ];
 
             return ListenableBuilder(
               listenable: _sharedElementRegistry,
@@ -494,14 +457,12 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                       routeMotion: widget.motionTheme.route,
                       closeMotion: widget.motionTheme.close,
                       interactiveMotion: widget.motionTheme.interactive,
-                      hiddenGap: widget.motionTheme.hiddenGap,
                       dragFadeDistance: widget.motionTheme.dragFadeDistance,
-                      fixedTravel: widget.motionTheme.fixedTravel,
+                      travel: widget.motionTheme.travel,
                       viewportHeight: layoutContext.size.height,
-                      keyboardInset:
-                          viewInsets.bottom
-                              .clamp(0.0, double.infinity)
-                              .toDouble(),
+                      keyboardInset: viewInsets.bottom
+                          .clamp(0.0, double.infinity)
+                          .toDouble(),
                       closing:
                           widget.controller.lifecycle == TrayLifecycle.closing,
                       onTransitionSettled:
@@ -510,10 +471,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                         final rect = visualState.geometry.rect;
                         return Positioned.fill(
                           top: 36,
-                          bottom:
-                              footer == null
-                                  ? innerBottomPadding
-                                  : activeFooterHeight + innerBottomPadding,
+                          bottom: footer == null
+                              ? innerBottomPadding
+                              : activeFooterHeight + innerBottomPadding,
                           child: _buildContent(
                             context: context,
                             rect: Rect.fromLTWH(
@@ -532,8 +492,8 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                             currentIndex: pages.indexOf(currentPage),
                             transition: transition,
                             pageProgresses: visualState.pageProgresses,
-                            geometryForSize:
-                                (page, size) => _geometryForContentSize(
+                            geometryForSize: (page, size) =>
+                                _geometryForContentSize(
                                   page,
                                   size,
                                   layoutContext,
@@ -549,21 +509,18 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                           children: [
                             Positioned.fill(
                               child: Semantics(
-                                label:
-                                    widget.barrierDismissible
-                                        ? 'Dismiss'
-                                        : 'Modal barrier',
+                                label: widget.barrierDismissible
+                                    ? 'Dismiss'
+                                    : 'Modal barrier',
                                 button: widget.barrierDismissible,
-                                onTap:
-                                    widget.barrierDismissible
-                                        ? _handleBarrierTap
-                                        : null,
+                                onTap: widget.barrierDismissible
+                                    ? _handleBarrierTap
+                                    : null,
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.opaque,
-                                  onTap:
-                                      widget.barrierDismissible
-                                          ? _handleBarrierTap
-                                          : () {},
+                                  onTap: widget.barrierDismissible
+                                      ? _handleBarrierTap
+                                      : () {},
                                   // Fold the presentation progress into the
                                   // barrier alpha. An Opacity here would composite
                                   // a full-screen layer on every animated frame.
@@ -607,9 +564,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                             // surface transform, so moving the
                                             // tray does not repaint them.
                                             child: RepaintBoundary(
-                                              child: Stack(
-                                                children: [content],
-                                              ),
+                                              child: Stack(children: [content]),
                                             ),
                                           ),
                                           if (footer != null)
@@ -624,28 +579,37 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                             left: 0,
                                             right: 0,
                                             height: 28,
-                                            child: GestureDetector(
-                                              behavior:
-                                                  HitTestBehavior.opaque,
-                                              onVerticalDragStart:
-                                                  _startDrag,
-                                              onVerticalDragUpdate:
-                                                  _updateDrag,
-                                              onVerticalDragEnd:
-                                                  (details) => _settleDrag(
-                                                    details.primaryVelocity ??
-                                                        0,
+                                            // The drag is the only way to close
+                                            // from the handle, so expose a
+                                            // dismiss action for assistive tech.
+                                            child: Semantics(
+                                              label: 'Close',
+                                              button: true,
+                                              onTap: widget.controller.close,
+                                              onDismiss:
+                                                  widget.controller.close,
+                                              child: GestureDetector(
+                                                behavior:
+                                                    HitTestBehavior.opaque,
+                                                onVerticalDragStart: _startDrag,
+                                                onVerticalDragUpdate:
+                                                    _updateDrag,
+                                                onVerticalDragEnd: (details) =>
+                                                    _settleDrag(
+                                                      details.primaryVelocity ??
+                                                          0,
+                                                    ),
+                                                onVerticalDragCancel:
+                                                    _cancelDrag,
+                                                child: const Align(
+                                                  alignment:
+                                                      Alignment.topCenter,
+                                                  child: Padding(
+                                                    padding: EdgeInsets.only(
+                                                      top: 8,
+                                                    ),
+                                                    child: TrayHandle(),
                                                   ),
-                                              onVerticalDragCancel:
-                                                  _cancelDrag,
-                                              child: const Align(
-                                                alignment:
-                                                    Alignment.topCenter,
-                                                child: Padding(
-                                                  padding: EdgeInsets.only(
-                                                    top: 8,
-                                                  ),
-                                                  child: TrayHandle(),
                                                 ),
                                               ),
                                             ),
@@ -672,7 +636,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     );
   }
 }
-
 
 class TraySizeObserver extends SingleChildRenderObjectWidget {
   const TraySizeObserver({
