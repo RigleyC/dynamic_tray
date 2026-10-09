@@ -59,14 +59,17 @@ destination again reuses its page instead of adding another history entry.
   the geometry resolver to opt into a centered width limit.
 - Opening starts the spring as soon as the tray mounts, with a 0.94-to-1
   scale. The first measured content size is applied directly; later
-  content-height changes use a spring. Incoming pages fade in with a 0.96-to-1
-  scale.
+  content-height changes animate with the theme's `geometry` motion. In the
+  default theme, page changes drive the height and the page crossfade on one
+  shared 220 ms timeline, with no page scale and no overshoot.
+- `TrayMotionTheme.snappy()` is the default. It uses `TrayTravel.measured()`,
+  so the tray starts exactly one tray height plus a small gap below the
+  viewport and moves on the first frame, with a stiffer `400/34` spring and a
+  220 ms close. Height and page crossfade share one 220 ms curve for page
+  changes.
 - `TrayMotionTheme.original()` matches the reference: a `240/26` spring over
   `TrayTravel.fixed(1000)`, a 340 ms close, and the same 370 ms curve for
-  page entry and exit. `TrayMotionTheme.snappy()` uses
-  `TrayTravel.measured()` instead, so the tray starts exactly one tray height
-  plus a small gap below the viewport and moves on the first frame, with a
-  stiffer `400/34` spring, a 220 ms close and a 180 ms page exit.
+  page entry and exit. Pass it to `showTray` to get the reference timings.
 - System back returns to the previous page, and closes the tray at the root.
   Navigation requested during a page transition runs once it settles, and a
   popped page's result is delivered after the transition, like `Navigator`.
@@ -79,8 +82,9 @@ destination again reuses its page instead of adding another history entry.
 - One visual state keeps bounds, radius, scale, backdrop, keyboard/drag offset,
   and page progress synchronized. Motor drives the state through independent
   channels so each transition keeps the reference's spring or timing profile.
-  `TrayMotionTheme.original()` (default) matches the reference timings;
-  `TrayMotionTheme.snappy()` is a faster profile. Both can be customized.
+  `TrayMotionTheme.snappy()` (default) is the faster profile;
+  `TrayMotionTheme.original()` matches the reference timings. Both can be
+  customized.
   Per-frame travel, drag, and keyboard offsets are applied as a transform, so
   the stack lays out the tray at its resting bounds and never relayouts while it
   animates. The backdrop folds its progress into the barrier alpha instead of

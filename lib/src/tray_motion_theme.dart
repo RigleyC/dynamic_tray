@@ -105,26 +105,27 @@ class TrayMotionTheme {
 
   /// Faster than [TrayMotionTheme.original]. The travel is measured, so the
   /// spring is stiffer to cover fewer pixels in the same perceptual window.
+  ///
+  /// Page changes drive height and crossfade on one shared timeline with no
+  /// overshoot, so the tray and its content always finish together.
   factory TrayMotionTheme.snappy() {
     return const TrayMotionTheme(
       route: SpringMotion(
         SpringDescription(mass: 1, stiffness: 400, damping: 34),
       ),
       close: CurvedMotion(Duration(milliseconds: 220), Cubic(0.4, 0, 0.8, 1)),
-      geometry: SpringMotion(
-        SpringDescription(mass: 0.6, stiffness: 185, damping: 15),
-      ),
-      effects: CurvedMotion(
-        Duration(milliseconds: 370),
-        Cubic(0.26, 0.08, 0.25, 1),
-      ),
-      effectsExit: CurvedMotion(
-        Duration(milliseconds: 180),
-        Cubic(0.42, 0, 1, 1),
-      ),
+      geometry: _pageChangeMotion,
+      effects: _pageChangeMotion,
+      effectsExit: _pageChangeMotion,
       interactive: SpringMotion(
         SpringDescription(mass: 1, stiffness: 260, damping: 24),
       ),
     );
   }
 }
+
+/// One timeline for page changes: tray height and page crossfade share it.
+const _pageChangeMotion = CurvedMotion(
+  Duration(milliseconds: 220),
+  Cubic(0.455, 0.03, 0.515, 0.955),
+);

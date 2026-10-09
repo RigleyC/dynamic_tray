@@ -247,8 +247,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     required bool visible,
     required bool interactive,
     required double opacity,
-    required Offset translation,
-    required double scale,
     required TrayPageTransition? transition,
   }) {
     Widget child = SizedBox(
@@ -282,11 +280,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
         ignoring: !interactive,
         child: Opacity(
           opacity: opacity.clamp(0.0, 1.0).toDouble(),
-          child: Transform.scale(
-            scale: scale,
-            alignment: Alignment.center,
-            child: Transform.translate(offset: translation, child: child),
-          ),
+          child: child,
         ),
       ),
     );
@@ -326,8 +320,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
           visible: isCurrent || isOutgoing || progress > 0,
           interactive: isCurrent,
           opacity: progress,
-          translation: Offset.zero,
-          scale: 0.96 + 0.04 * progress,
           transition: transition,
         ),
       );
