@@ -1,7 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderBox, RenderProxyBox;
-import 'package:flutter/widgets.dart';
 import 'package:motor/motor.dart';
 
 import 'tray_controller.dart';
@@ -12,6 +12,7 @@ import 'tray_motion_theme.dart';
 import 'tray_page.dart';
 import 'tray_restoration.dart';
 import 'tray_shared_element.dart';
+import 'tray_theme.dart';
 
 part 'tray_motion_coordinator.dart';
 
@@ -548,7 +549,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                     decoration: ShapeDecoration(
                                       color:
                                           widget.surfaceColor ??
-                                          const Color(0xFF141414),
+                                          traySurfaceColorOf(context),
                                       shape: RoundedSuperellipseBorder(
                                         borderRadius: surfaceRadius,
                                       ),
@@ -556,65 +557,76 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                     child: ClipRSuperellipse(
                                       borderRadius: surfaceRadius,
                                       clipBehavior: Clip.antiAlias,
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          Positioned.fill(
-                                            // Isolates the pages from the
-                                            // surface transform, so moving the
-                                            // tray does not repaint them.
-                                            child: RepaintBoundary(
-                                              child: Stack(children: [content]),
+                                      // Gives Material widgets (TextField,
+                                      // InkWell, ListTile) and text styles a
+                                      // Material ancestor inside the tray.
+                                      child: Material(
+                                        type: MaterialType.transparency,
+                                        textStyle: trayTextStyleOf(context),
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            Positioned.fill(
+                                              // Isolates the pages from the
+                                              // surface transform, so moving
+                                              // the tray does not repaint them.
+                                              child: RepaintBoundary(
+                                                child: Stack(
+                                                  children: [content],
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                          if (footer != null)
+                                            if (footer != null)
+                                              Positioned(
+                                                bottom: innerBottomPadding,
+                                                left: 24,
+                                                right: 24,
+                                                child: footer,
+                                              ),
                                             Positioned(
-                                              bottom: innerBottomPadding,
-                                              left: 24,
-                                              right: 24,
-                                              child: footer,
-                                            ),
-                                          Positioned(
-                                            top: 8,
-                                            left: 0,
-                                            right: 0,
-                                            height: 28,
-                                            // The drag is the only way to close
-                                            // from the handle, so expose a
-                                            // dismiss action for assistive tech.
-                                            child: Semantics(
-                                              label: 'Close',
-                                              button: true,
-                                              onTap: widget.controller.close,
-                                              onDismiss:
-                                                  widget.controller.close,
-                                              child: GestureDetector(
-                                                behavior:
-                                                    HitTestBehavior.opaque,
-                                                onVerticalDragStart: _startDrag,
-                                                onVerticalDragUpdate:
-                                                    _updateDrag,
-                                                onVerticalDragEnd: (details) =>
-                                                    _settleDrag(
-                                                      details.primaryVelocity ??
-                                                          0,
+                                              top: 8,
+                                              left: 0,
+                                              right: 0,
+                                              height: 28,
+                                              // The drag is the only way to
+                                              // close from the handle, so
+                                              // expose a dismiss action for
+                                              // assistive tech.
+                                              child: Semantics(
+                                                label: 'Close',
+                                                button: true,
+                                                onTap: widget.controller.close,
+                                                onDismiss:
+                                                    widget.controller.close,
+                                                child: GestureDetector(
+                                                  behavior:
+                                                      HitTestBehavior.opaque,
+                                                  onVerticalDragStart:
+                                                      _startDrag,
+                                                  onVerticalDragUpdate:
+                                                      _updateDrag,
+                                                  onVerticalDragEnd:
+                                                      (details) => _settleDrag(
+                                                        details.primaryVelocity ??
+                                                            0,
+                                                      ),
+                                                  onVerticalDragCancel:
+                                                      _cancelDrag,
+                                                  child: const Align(
+                                                    alignment:
+                                                        Alignment.topCenter,
+                                                    child: Padding(
+                                                      padding: EdgeInsets.only(
+                                                        top: 8,
+                                                      ),
+                                                      child: TrayHandle(),
                                                     ),
-                                                onVerticalDragCancel:
-                                                    _cancelDrag,
-                                                child: const Align(
-                                                  alignment:
-                                                      Alignment.topCenter,
-                                                  child: Padding(
-                                                    padding: EdgeInsets.only(
-                                                      top: 8,
-                                                    ),
-                                                    child: TrayHandle(),
                                                   ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),

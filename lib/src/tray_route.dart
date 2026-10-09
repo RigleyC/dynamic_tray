@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/cupertino.dart';
 
 import 'tray_controller.dart';
 import 'tray_geometry.dart';
@@ -128,16 +128,21 @@ class TrayRoute<T> extends PopupRoute<T> {
     trayController.attachNavigator(Navigator.of(context), this);
     return TrayScope(
       controller: trayController,
-      child: TraySurface(
-        controller: trayController,
-        geometryResolver: geometryResolver,
-        motionTheme: motionTheme,
-        footer: footer,
-        footerBuilder: footerBuilder,
-        surfaceColor: surfaceColor,
-        barrierColor: _barrierColor,
-        barrierDismissible: _barrierDismissible,
-        restorationId: trayController.isRestorable ? restorationId : null,
+      // A modal sheet sits above the page, so dynamic colors inside the tray
+      // resolve to their elevated variants, as on iOS.
+      child: CupertinoUserInterfaceLevel(
+        data: CupertinoUserInterfaceLevelData.elevated,
+        child: TraySurface(
+          controller: trayController,
+          geometryResolver: geometryResolver,
+          motionTheme: motionTheme,
+          footer: footer,
+          footerBuilder: footerBuilder,
+          surfaceColor: surfaceColor,
+          barrierColor: _barrierColor,
+          barrierDismissible: _barrierDismissible,
+          restorationId: trayController.isRestorable ? restorationId : null,
+        ),
       ),
     );
   }

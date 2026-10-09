@@ -21,6 +21,13 @@ class DynamicTrayExampleApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
       ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.indigo,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+      ),
       home: const ExampleHomePage(),
     );
   }
@@ -31,24 +38,19 @@ class ExampleHomePage extends StatelessWidget {
 
   Future<void> _openTray(BuildContext context) async {
     final result = await context.openTray<String>(
-      builder: (_) => const TrayExampleContent(child: WalletDetailsView()),
+      builder: (_) => const WalletDetailsView(),
       viewId: 'wallet-details',
       footer:
           (context) => SizedBox(
             height: 64,
             width: double.infinity,
-            child: TrayExampleContent(
-              child: FilledButton(
-                onPressed:
-                    () => context.tray.setView(
-                      builder:
-                          (_) => const TrayExampleContent(
-                            child: ChooseCategoryView(),
-                          ),
-                      viewId: 'choose-category',
-                    ),
-                child: const Text('Change category'),
-              ),
+            child: FilledButton(
+              onPressed:
+                  () => context.tray.setView(
+                    builder: (_) => const ChooseCategoryView(),
+                    viewId: 'choose-category',
+                  ),
+              child: const Text('Change category'),
             ),
           ),
     );
@@ -67,44 +69,6 @@ class ExampleHomePage extends StatelessWidget {
         child: FilledButton(
           onPressed: () => _openTray(context),
           child: const Text('Open details'),
-        ),
-      ),
-    );
-  }
-}
-
-/// Styles the Material example's content locally without making the package
-/// depend on Material widgets or a particular app theme.
-class TrayExampleContent extends StatelessWidget {
-  const TrayExampleContent({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final parentTheme = Theme.of(context);
-    final theme = parentTheme.copyWith(
-      brightness: Brightness.dark,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: Colors.indigo,
-        brightness: Brightness.dark,
-      ).copyWith(onSurface: Colors.white),
-      textTheme: parentTheme.textTheme.apply(
-        bodyColor: Colors.white,
-        displayColor: Colors.white,
-      ),
-    );
-
-    return Theme(
-      data: theme,
-      child: Material(
-        type: MaterialType.transparency,
-        child: DefaultTextStyle(
-          style: theme.textTheme.bodyMedium!,
-          child: IconTheme(
-            data: const IconThemeData(color: Colors.white),
-            child: child,
-          ),
         ),
       ),
     );
@@ -206,7 +170,7 @@ class WalletDetailsView extends StatelessWidget {
               () => context.tray.setView(
                 builder:
                     (_) =>
-                        const TrayExampleContent(child: ChooseCategoryView()),
+                        const ChooseCategoryView(),
                 viewId: 'choose-category',
               ),
           child: const Text('Choose category'),
@@ -214,7 +178,7 @@ class WalletDetailsView extends StatelessWidget {
         OutlinedButton(
           onPressed:
               () => context.tray.setView(
-                builder: (_) => const TrayExampleContent(child: LongListView()),
+                builder: (_) => const LongListView(),
                 viewId: 'long-list',
                 layout: TrayPageLayout.bounded,
               ),
@@ -291,7 +255,7 @@ class LongListView extends StatelessWidget {
           onTap:
               () => context.tray.setView(
                 builder:
-                    (_) => const TrayExampleContent(child: WalletDetailsView()),
+                    (_) => const WalletDetailsView(),
                 viewId: 'wallet-details',
               ),
         );
