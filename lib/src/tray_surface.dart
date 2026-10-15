@@ -192,9 +192,21 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     if (previousSize == size && !isInitialMeasurement && !updatesFallbackSize) {
       return;
     }
+    // A bounded page's height comes from the viewport, not from its content.
+    // Its measured size only changes while the tray animates, because the
+    // layer is laid out at the animated rect. Reporting those frames would
+    // restart the geometry motion on every frame, so only the initial
+    // measurement or a width change (rotation, split view) is reported.
+    final isBoundedHeightOnlyChange =
+        page.layout == TrayPageLayout.bounded &&
+        !isInitialMeasurement &&
+        previousSize?.width == size.width;
     _contentSizes[page] = size;
     if (isCurrentPage) {
       _contentSize = size;
+    }
+    if (isBoundedHeightOnlyChange) {
+      return;
     }
     if (isInitialMeasurement) _hasInitialMeasurement = true;
     _visualMotionKey.currentState?.reportMeasuredGeometry(

@@ -35,18 +35,15 @@ class TrayHeader extends StatelessWidget {
         if (hasText)
           Expanded(
             child: Align(
-              alignment:
-                  hasTwoButtons ? Alignment.center : Alignment.centerLeft,
+              alignment: hasTwoButtons
+                  ? Alignment.center
+                  : Alignment.centerLeft,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment:
-                    hasTwoButtons
-                        ? CrossAxisAlignment.center
-                        : CrossAxisAlignment.start,
-                children: [
-                  if (title != null) title!,
-                  if (subtitle != null) subtitle!,
-                ],
+                crossAxisAlignment: hasTwoButtons
+                    ? CrossAxisAlignment.center
+                    : CrossAxisAlignment.start,
+                children: [?title, ?subtitle],
               ),
             ),
           ),

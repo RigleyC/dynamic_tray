@@ -68,6 +68,21 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   bool _receivedFirstMeasurement = false;
   bool _firstGeometrySnapScheduled = false;
   TrayGeometry? _pendingFirstGeometry;
+  // Last geometry the motion was sent to (animated or snapped). Comparing
+  // against it stops repeated reports of the same target from restarting the
+  // curve, which would otherwise reset its near-flat start on every frame.
+  TrayGeometry? _geometryTarget;
+
+  void _animateGeometryTo(TrayGeometry geometry) {
+    _geometryTarget = geometry;
+    _geometryMotion.motion = widget.geometryMotion;
+    _geometryMotion.animateTo(geometry);
+  }
+
+  void _snapGeometry(TrayGeometry geometry) {
+    _geometryTarget = geometry;
+    _geometryMotion.value = geometry;
+  }
 
   void reportMeasuredGeometry(
     TrayGeometry geometry, {
@@ -88,16 +103,15 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
           final pendingGeometry = _pendingFirstGeometry;
           _pendingFirstGeometry = null;
           if (mounted && !widget.closing && pendingGeometry != null) {
-            _geometryMotion.value = pendingGeometry;
+            _snapGeometry(pendingGeometry);
           }
         });
       }
       return;
     }
     _receivedFirstMeasurement = true;
-    if (_geometryMotion.value != geometry) {
-      _geometryMotion.motion = widget.geometryMotion;
-      _geometryMotion.animateTo(geometry);
+    if (geometry != _geometryTarget) {
+      _animateGeometryTo(geometry);
     }
   }
 
@@ -118,6 +132,7 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       converter: const TrayGeometryMotionConverter(),
       initialValue: widget.geometry,
     );
+    _geometryTarget = widget.geometry;
     _presentationMotion = SingleMotionController(
       motion: widget.routeMotion,
       vsync: this,
@@ -162,13 +177,12 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       return;
     }
     if (geometryChanged &&
-        _geometryMotion.value != widget.geometry &&
+        widget.geometry != _geometryTarget &&
         (!pageSequenceChanged || widget.geometryIsMeasured)) {
       if (_receivedFirstMeasurement) {
-        _geometryMotion.motion = widget.geometryMotion;
-        _geometryMotion.animateTo(widget.geometry);
+        _animateGeometryTo(widget.geometry);
       } else {
-        _geometryMotion.value = widget.geometry;
+        _snapGeometry(widget.geometry);
       }
     }
     if (transitionChanged || pageSequenceChanged) {
