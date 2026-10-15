@@ -31,13 +31,15 @@ that page, and with a tray already open and on screen it pushes the page into
 it. A shared helper can therefore call `openTray` without knowing where it
 runs. A call that cannot be honored completes with `null` right away: the tray
 is still opening or closing, another route covers it, or it is moving between
-pages. `showTray` is the low-level call that only ever creates a tray.
+pages. `showTray` is the low-level call that only ever creates a tray. A page
+that can also be shown outside a tray asks `context.maybeTray` and gets the
+controller or `null`, instead of the asserting `context.tray`.
 
 `goBack` returns to the previous view within the same tray. `pop` returns to the
 page below and, at the root page, dismisses the tray with that result. `close`
 and `dismiss` always close the whole session, so a page that returns a result
 must use `pop`: calling `close` would also close the tray it was opened into.
-Android system back also dismisses the tray.
+Android system back pops the current page and, at the root, dismisses the tray.
 Give repeatedly reachable views a stable `viewId` so tapping the same
 destination again reuses its page instead of adding another history entry;
 `openTray` reuses it the same way.

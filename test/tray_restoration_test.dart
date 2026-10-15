@@ -66,13 +66,12 @@ TrayPage<dynamic> _restorablePage(String id, Object? arguments) {
       return TrayPage<void>(
         restorationId: id,
         restorationArguments: arguments,
-        builder:
-            (_) => Builder(
-              builder: (context) {
-                _restorableController = context.tray;
-                return const Text('root');
-              },
-            ),
+        builder: (_) => Builder(
+          builder: (context) {
+            _restorableController = context.tray;
+            return const Text('root');
+          },
+        ),
       );
     case 'details':
       return TrayPage<void>(

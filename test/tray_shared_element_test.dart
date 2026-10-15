@@ -121,8 +121,8 @@ void main() {
                   openedTray = showTray<String>(
                     context: context,
                     page: TrayPage(
-                      builder:
-                          (_) => const _SharedRootPage(dismissAfterPop: false),
+                      builder: (_) =>
+                          const _SharedRootPage(dismissAfterPop: false),
                     ),
                     motionTheme: TrayMotionTheme(
                       route: Motion.none(),

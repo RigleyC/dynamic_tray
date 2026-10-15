@@ -18,6 +18,15 @@ class TrayScope extends InheritedWidget {
     return scope!.controller;
   }
 
+  /// The controller of the tray this context belongs to, or null when there is
+  /// no tray here.
+  ///
+  /// Use this when a page can also be shown outside a tray. It does not create
+  /// a dependency on the scope, so the caller listens to the controller itself
+  /// when it needs to react to the tray's state.
+  static TrayController? maybeOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<TrayScope>()?.controller;
+
   @override
   bool updateShouldNotify(TrayScope oldWidget) =>
       controller != oldWidget.controller;
@@ -25,4 +34,7 @@ class TrayScope extends InheritedWidget {
 
 extension TrayContext on BuildContext {
   TrayController get tray => TrayScope.of(this);
+
+  /// The tray that owns this context, or null when there is no tray here.
+  TrayController? get maybeTray => TrayScope.maybeOf(this);
 }

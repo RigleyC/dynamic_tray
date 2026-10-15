@@ -329,6 +329,31 @@ void main() {
     expect(find.text('Root'), findsOneWidget);
     expect(find.text('Child'), findsNothing);
   });
+
+  testWidgets('reports the tray through maybeTray only inside one', (
+    tester,
+  ) async {
+    late BuildContext homeContext;
+    _probeTray = null;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            homeContext = context;
+            return const Scaffold(body: Text('Home'));
+          },
+        ),
+      ),
+    );
+
+    expect(homeContext.maybeTray, isNull);
+
+    homeContext.openTray<void>(builder: (_) => const _ScopeProbe()).ignore();
+    await tester.pumpAndSettle();
+
+    expect(_probeTray, isNotNull);
+  });
 }
 
 var _statefulRootInstances = 0;
@@ -387,6 +412,18 @@ class _MeasurementRootPageState extends State<_MeasurementRootPage> {
 TrayController? _measurementController;
 TrayController? _reopenController;
 TrayController? _childPageController;
+TrayController? _probeTray;
+
+/// Reads the tray from a page's own build context, which sits under the scope.
+class _ScopeProbe extends StatelessWidget {
+  const _ScopeProbe();
+
+  @override
+  Widget build(BuildContext context) {
+    _probeTray = context.maybeTray;
+    return const Text('Probe');
+  }
+}
 
 class _ReopenRootPage extends StatelessWidget {
   const _ReopenRootPage();

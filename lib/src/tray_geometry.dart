@@ -123,14 +123,15 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
     // The motion coordinator applies the keyboard translation. Reserve that
     // space here so the tray stays on screen while keeping its resting
     // position a fixed distance from the viewport edge.
-    final keyboardInset =
-        context.viewInsets.bottom.clamp(0.0, double.infinity).toDouble();
+    final keyboardInset = context.viewInsets.bottom
+        .clamp(0.0, double.infinity)
+        .toDouble();
     final bottomGap = bottomMargin;
-    final availableHeight = (context.size.height -
-            safeTop -
-            bottomGap -
-            keyboardInset)
-        .clamp(0.0, context.size.height);
+    final availableHeight =
+        (context.size.height - safeTop - bottomGap - keyboardInset).clamp(
+          0.0,
+          context.size.height,
+        );
     final availableWidth = (context.size.width - horizontalMargin * 2).clamp(
       0.0,
       context.size.width,
@@ -159,14 +160,12 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
       borderRadius: BorderRadius.only(
         topLeft: Radius.circular(radius),
         topRight: Radius.circular(radius),
-        bottomRight:
-            restsAtDisplayEdge
-                ? insetFromDisplay(displayCorners.bottomRight)
-                : Radius.circular(radius),
-        bottomLeft:
-            restsAtDisplayEdge
-                ? insetFromDisplay(displayCorners.bottomLeft)
-                : Radius.circular(radius),
+        bottomRight: restsAtDisplayEdge
+            ? insetFromDisplay(displayCorners.bottomRight)
+            : Radius.circular(radius),
+        bottomLeft: restsAtDisplayEdge
+            ? insetFromDisplay(displayCorners.bottomLeft)
+            : Radius.circular(radius),
       ),
     );
   }
