@@ -55,7 +55,9 @@ and does not rebuild its readers when the tray changes.
   after loading, the tray resizes with the reference height spring.
 - `TrayPageLayout.bounded` gives scrolling pages a finite viewport that fills
   the available safe height. Use it for a root `ListView` or
-  `CustomScrollView`; the page owns its scrolling behavior.
+  `CustomScrollView`; the page owns its scrolling behavior. While the tray
+  animates, a bounded page keeps its final height and the surface reveals or
+  clips it, so the page does not relayout on every frame.
 - The default surface uses 38 px rounded superellipse corners at the top.
   The bottom corners adapt to the device display: each radius is the display
   corner radius minus the matching 8 px side and bottom insets, clamped at zero.

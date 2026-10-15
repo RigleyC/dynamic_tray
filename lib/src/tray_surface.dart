@@ -205,10 +205,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     if (previousSize == size && !isInitialMeasurement && !updatesFallbackSize) {
       return;
     }
-    // A bounded page's height comes from the viewport, not from its content.
-    // Its measured size only changes while the tray animates, because the
-    // layer is laid out at the animated rect. Reporting those frames would
-    // restart the geometry motion on every frame, so only the initial
+    // A bounded page's height comes from the viewport, not from its content,
+    // and build already derives that same height for the geometry. Reporting
+    // a height-only change would only repeat the geometry build computed (and
+    // would run during layout on every keyboard frame), so only the initial
     // measurement or a width change (rotation, split view) is reported.
     final isBoundedHeightOnlyChange =
         page.layout == TrayPageLayout.bounded &&
@@ -295,9 +295,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
           _updateContentSize(pageEntry, size, geometryForSize(size)),
       child: child,
     );
-    child = pageEntry.layout == TrayPageLayout.bounded
-        ? SizedBox(width: width, height: height, child: child)
-        : Align(alignment: Alignment.topCenter, child: child);
+    final isBounded = pageEntry.layout == TrayPageLayout.bounded;
+    if (!isBounded) {
+      child = Align(alignment: Alignment.topCenter, child: child);
+    }
 
     final layer = Offstage(
       offstage: !visible,
@@ -309,10 +310,11 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
         ),
       ),
     );
-    // Hidden pages stop their tickers. They also take a fixed size, so the
-    // animating surface height does not relayout them on every frame.
+    // Hidden pages stop their tickers. Bounded and hidden pages also take a
+    // fixed size, so the animating surface height does not relayout them on
+    // every frame. The surface clips the layer while it animates.
     final gatedLayer = TickerMode(enabled: visible, child: layer);
-    if (!visible) {
+    if (isBounded || !visible) {
       return Positioned(
         left: 0,
         top: 0,
@@ -321,20 +323,19 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
         child: gatedLayer,
       );
     }
-    return pageEntry.layout == TrayPageLayout.bounded
-        ? Positioned.fill(child: gatedLayer)
-        : Positioned(left: 0, right: 0, top: 0, child: gatedLayer);
+    return Positioned(left: 0, right: 0, top: 0, child: gatedLayer);
   }
 
   Widget _buildContent({
     required BuildContext context,
-    required Rect rect,
+    required double width,
     required List<TrayPage<dynamic>> pages,
     required List<Widget> pageWidgets,
     required int currentIndex,
     required TrayPageTransition? transition,
     required Map<TrayPage<dynamic>, double> pageProgresses,
     required double restingHeight,
+    required double boundedHeight,
     required TrayGeometry Function(TrayPage<dynamic>, Size) geometryForSize,
   }) {
     final outgoingIndex = transition == null
@@ -352,8 +353,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
           context: context,
           page: pageWidgets[index],
           pageEntry: page,
-          width: rect.width,
-          height: visible ? rect.height : restingHeight,
+          width: width,
+          height: page.layout == TrayPageLayout.bounded
+              ? boundedHeight
+              : restingHeight,
           measure: isCurrent,
           geometryForSize: (size) => geometryForSize(page, size),
           visible: visible,
@@ -484,8 +487,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
             final pageWidgets = [
               for (final page in pages) _pageWidgetFor(context, page),
             ];
-            // The tray's resting height for the active page. Hidden pages are
-            // laid out at this height so they do not follow the animation.
+            // The tray's resting content height for the active page. Hidden
+            // intrinsic pages are laid out at this height so they do not follow
+            // the animation.
             final restingHeight =
                 (geometry.rect.height -
                         activeFooterHeight -
@@ -535,23 +539,18 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                               : activeFooterHeight + innerBottomPadding,
                           child: _buildContent(
                             context: context,
-                            rect: Rect.fromLTWH(
-                              0,
-                              0,
-                              rect.width,
-                              (rect.height -
-                                      activeFooterHeight -
-                                      36 -
-                                      innerBottomPadding)
-                                  .clamp(0.0, rect.height)
-                                  .toDouble(),
-                            ),
+                            width: rect.width,
                             pages: pages,
                             pageWidgets: pageWidgets,
                             currentIndex: pages.indexOf(currentPage),
                             transition: transition,
                             pageProgresses: visualState.pageProgresses,
                             restingHeight: restingHeight,
+                            // Bounded pages keep this height for the whole
+                            // motion. It is the height a bounded page has as the
+                            // current page, whatever page is shown now, so the
+                            // surface reveals it instead of relaying it out.
+                            boundedHeight: boundedFallbackHeight,
                             geometryForSize: (page, size) =>
                                 _geometryForContentSize(
                                   page,
