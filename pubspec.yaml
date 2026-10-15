@@ -11,6 +11,7 @@ dependencies:
   corner_radius_plugin: ^0.1.1
   flutter:
     sdk: flutter
+  material_ui: ^1.1.1
   motor: ^1.1.0
 
 dev_dependencies:

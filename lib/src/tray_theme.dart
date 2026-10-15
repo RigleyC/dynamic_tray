@@ -1,5 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 // Material's Theme widget also provides a CupertinoTheme built from the
 // Material theme, so reading CupertinoTheme works under both MaterialApp and
