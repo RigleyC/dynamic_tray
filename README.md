@@ -91,6 +91,11 @@ and does not rebuild its readers when the tray changes.
 - `TrayMotionTheme.original()` matches the reference: a `240/26` spring over
   `TrayTravel.fixed(1000)`, a 340 ms close, and the same 370 ms curve for
   page entry and exit. Pass it to `showTray` to get the reference timings.
+- Page widgets and footers are cached per page while the page is in the stack.
+  `builder`, `footerBuilder` and `footer` run once, not on every controller
+  notification, keyboard frame or lifecycle change. Read Theme, localizations
+  and providers inside the widget the builder returns, not in the closure,
+  and do not expect captured mutable variables to refresh.
 - System back returns to the previous page, and closes the tray at the root.
   Navigation requested during a page transition runs once it settles, and a
   popped page's result is delivered after the transition, like `Navigator`.
