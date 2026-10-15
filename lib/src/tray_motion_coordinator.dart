@@ -115,7 +115,11 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
     }
   }
 
-  Listenable get _allMotions => Listenable.merge([
+  // Rebuilt only when the page motion keys change, in _syncPageMotions, so the
+  // AnimatedBuilder keeps one listenable across frames.
+  late Listenable _allMotions;
+
+  Listenable _buildAllMotions() => Listenable.merge([
     _geometryMotion,
     _presentationMotion,
     _dragMotion,
@@ -161,6 +165,7 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       widget.pages,
     );
     final transitionChanged = oldWidget.transition?.id != widget.transition?.id;
+    final keyboardChanged = oldWidget.keyboardInset != widget.keyboardInset;
     final closingStarted = !oldWidget.closing && widget.closing;
     if (closingStarted) {
       if (_presentationMotion.value <= 0.001) {
@@ -176,10 +181,15 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
     if (widget.closing) {
       return;
     }
+    // The keyboard animates on the system side and the tray follows it each
+    // frame through viewInsets. Animating the geometry as well would make the
+    // tray lag behind the keyboard, so a keyboard-only change snaps.
+    final keyboardOnlyChange =
+        keyboardChanged && !transitionChanged && !pageSequenceChanged;
     if (geometryChanged &&
         widget.geometry != _geometryTarget &&
         (!pageSequenceChanged || widget.geometryIsMeasured)) {
-      if (_receivedFirstMeasurement) {
+      if (_receivedFirstMeasurement && !keyboardOnlyChange) {
         _animateGeometryTo(widget.geometry);
       } else {
         _snapGeometry(widget.geometry);
@@ -231,27 +241,32 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       ...widget.pages,
       if (widget.transition != null) widget.transition!.outgoing,
     };
+    var keysChanged = false;
     for (final page in retainedPages) {
-      _pageMotions.putIfAbsent(page, () {
-        _pageTargets[page] = 0;
-        return SingleMotionController(
-          motion: widget.effectsMotion,
-          vsync: this,
-          // The first page is already present when the tray opens. The Expo
-          // package only applies this crossfade to subsequent view changes.
-          initialValue:
-              widget.transition == null &&
-                  identical(page, widget.controller.currentPage)
-              ? 1
-              : 0,
-        )..addStatusListener(_handlePageMotionStatus);
-      });
+      if (_pageMotions.containsKey(page)) continue;
+      keysChanged = true;
+      _pageTargets[page] = 0;
+      _pageMotions[page] = SingleMotionController(
+        motion: widget.effectsMotion,
+        vsync: this,
+        // The first page is already present when the tray opens. The Expo
+        // package only applies this crossfade to subsequent view changes.
+        initialValue:
+            widget.transition == null &&
+                identical(page, widget.controller.currentPage)
+            ? 1
+            : 0,
+      )..addStatusListener(_handlePageMotionStatus);
     }
     for (final page in _pageMotions.keys.toList()) {
       if (!retainedPages.contains(page)) {
+        keysChanged = true;
         _pageTargets.remove(page);
         _pageMotions.remove(page)?.dispose();
       }
+    }
+    if (keysChanged) {
+      _allMotions = _buildAllMotions();
     }
     _transitionId = widget.transition?.id;
     for (final entry in _pageMotions.entries) {

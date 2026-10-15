@@ -251,9 +251,20 @@ class TrayController extends ChangeNotifier {
       return;
     }
     _transition = null;
+    _pruneVisitedPages();
     notifyListeners();
     _flushPendingPop();
     _runPendingNavigation();
+  }
+
+  /// Drops pages that left the stack and have no stable [TrayPage.viewId].
+  /// Pages with a viewId stay so that revisiting them reuses their state.
+  void _pruneVisitedPages() {
+    _visitedPages.removeWhere(
+      (page) =>
+          page.viewId == null &&
+          !_entries.any((entry) => identical(entry.page, page)),
+    );
   }
 
   void _runPendingNavigation() {

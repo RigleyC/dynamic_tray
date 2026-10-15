@@ -47,6 +47,11 @@ class TraySurface extends StatefulWidget {
 class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   Size _contentSize = Size.zero;
   final Map<TrayPage<dynamic>, Size> _contentSizes = {};
+  // Built once per page and reused on every rebuild. Rebuilds happen on each
+  // controller notify and on each MediaQuery change, such as the keyboard, and
+  // the builders must not run again for those.
+  final Map<TrayPage<dynamic>, Widget> _pageWidgets = {};
+  final Map<TrayPage<dynamic>, Widget?> _footers = {};
   bool _hasInitialMeasurement = false;
 
   /// Fixed space reserved for the footer, independent of its real height.
@@ -105,6 +110,8 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
       retainedPages.add(transition.outgoing);
     }
     _contentSizes.removeWhere((page, _) => !retainedPages.contains(page));
+    _pageWidgets.removeWhere((page, _) => !retainedPages.contains(page));
+    _footers.removeWhere((page, _) => !retainedPages.contains(page));
   }
 
   @override
@@ -113,6 +120,12 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_handleControllerChanged);
       widget.controller.addListener(_handleControllerChanged);
+      _pageWidgets.clear();
+      _footers.clear();
+    }
+    if (oldWidget.footer != widget.footer ||
+        oldWidget.footerBuilder != widget.footerBuilder) {
+      _footers.clear();
     }
   }
 
@@ -296,9 +309,21 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
         ),
       ),
     );
+    // Hidden pages stop their tickers. They also take a fixed size, so the
+    // animating surface height does not relayout them on every frame.
+    final gatedLayer = TickerMode(enabled: visible, child: layer);
+    if (!visible) {
+      return Positioned(
+        left: 0,
+        top: 0,
+        width: width,
+        height: height,
+        child: gatedLayer,
+      );
+    }
     return pageEntry.layout == TrayPageLayout.bounded
-        ? Positioned.fill(child: layer)
-        : Positioned(left: 0, right: 0, top: 0, child: layer);
+        ? Positioned.fill(child: gatedLayer)
+        : Positioned(left: 0, right: 0, top: 0, child: gatedLayer);
   }
 
   Widget _buildContent({
@@ -309,6 +334,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     required int currentIndex,
     required TrayPageTransition? transition,
     required Map<TrayPage<dynamic>, double> pageProgresses,
+    required double restingHeight,
     required TrayGeometry Function(TrayPage<dynamic>, Size) geometryForSize,
   }) {
     final outgoingIndex = transition == null
@@ -320,16 +346,17 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
       final isCurrent = index == currentIndex;
       final isOutgoing = index == outgoingIndex;
       final progress = (pageProgresses[page] ?? 0).clamp(0.0, 1.0).toDouble();
+      final visible = isCurrent || isOutgoing || progress > 0;
       layers.add(
         _buildPageLayer(
           context: context,
           page: pageWidgets[index],
           pageEntry: page,
           width: rect.width,
-          height: rect.height,
+          height: visible ? rect.height : restingHeight,
           measure: isCurrent,
           geometryForSize: (size) => geometryForSize(page, size),
-          visible: isCurrent || isOutgoing || progress > 0,
+          visible: visible,
           interactive: isCurrent,
           opacity: progress,
           transition: transition,
@@ -338,6 +365,27 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     }
 
     return Stack(fit: StackFit.expand, children: layers);
+  }
+
+  Widget _pageWidgetFor(BuildContext context, TrayPage<dynamic> page) {
+    return _pageWidgets.putIfAbsent(
+      page,
+      () => KeyedSubtree(key: ObjectKey(page), child: page.builder(context)),
+    );
+  }
+
+  Widget? _footerFor(BuildContext context, TrayPage<dynamic> page) {
+    if (_footers.containsKey(page)) {
+      return _footers[page];
+    }
+    final footer = page.hideFooter
+        ? null
+        : page.footerBuilder?.call(context) ??
+              page.footer ??
+              widget.footerBuilder?.call(context) ??
+              widget.footer;
+    _footers[page] = footer;
+    return footer;
   }
 
   void _handleBarrierTap() {
@@ -381,13 +429,14 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
             final mediaQueryPadding = MediaQuery.paddingOf(context);
             final viewInsets = MediaQuery.viewInsetsOf(context);
             final currentPage = widget.controller.currentPage;
-            final footer = currentPage.hideFooter
-                ? null
-                : currentPage.footerBuilder?.call(context) ??
-                      currentPage.footer ??
-                      widget.footerBuilder?.call(context) ??
-                      widget.footer;
+            final footer = _footerFor(context, currentPage);
             final activeFooterHeight = footer == null ? 0.0 : _footerReserve;
+            // Theme lookups run once per surface build. The motion coordinator
+            // calls the builder on every frame, so per-frame lookups would
+            // repeat the same work.
+            final surfaceColor =
+                widget.surfaceColor ?? traySurfaceColorOf(context);
+            final textStyle = trayTextStyleOf(context);
             const innerBottomPadding = 24.0;
             final viewportBottomGap = viewInsets.bottom + 8.0;
             final layoutContext = TrayLayoutContext(
@@ -433,12 +482,17 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                 transition.outgoing,
             ];
             final pageWidgets = [
-              for (final page in pages)
-                KeyedSubtree(
-                  key: ObjectKey(page),
-                  child: page.builder(context),
-                ),
+              for (final page in pages) _pageWidgetFor(context, page),
             ];
+            // The tray's resting height for the active page. Hidden pages are
+            // laid out at this height so they do not follow the animation.
+            final restingHeight =
+                (geometry.rect.height -
+                        activeFooterHeight -
+                        36 -
+                        innerBottomPadding)
+                    .clamp(0.0, geometry.rect.height)
+                    .toDouble();
 
             return ListenableBuilder(
               listenable: _sharedElementRegistry,
@@ -497,6 +551,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                             currentIndex: pages.indexOf(currentPage),
                             transition: transition,
                             pageProgresses: visualState.pageProgresses,
+                            restingHeight: restingHeight,
                             geometryForSize: (page, size) =>
                                 _geometryForContentSize(
                                   page,
@@ -549,87 +604,93 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                 offset: visualState.surfaceOffset,
                                 child: Transform.scale(
                                   scale: visualState.surfaceScale,
-                                  child: DecoratedBox(
-                                    decoration: ShapeDecoration(
-                                      color:
-                                          widget.surfaceColor ??
-                                          traySurfaceColorOf(context),
-                                      shape: RoundedSuperellipseBorder(
-                                        borderRadius: surfaceRadius,
+                                  // Keeps the moving surface in its own layer,
+                                  // separate from the barrier.
+                                  child: RepaintBoundary(
+                                    child: DecoratedBox(
+                                      decoration: ShapeDecoration(
+                                        color: surfaceColor,
+                                        shape: RoundedSuperellipseBorder(
+                                          borderRadius: surfaceRadius,
+                                        ),
                                       ),
-                                    ),
-                                    child: ClipRSuperellipse(
-                                      borderRadius: surfaceRadius,
-                                      clipBehavior: Clip.antiAlias,
-                                      // Gives Material widgets (TextField,
-                                      // InkWell, ListTile) and text styles a
-                                      // Material ancestor inside the tray.
-                                      child: Material(
-                                        type: MaterialType.transparency,
-                                        textStyle: trayTextStyleOf(context),
-                                        child: Stack(
-                                          fit: StackFit.expand,
-                                          children: [
-                                            Positioned.fill(
-                                              // Isolates the pages from the
-                                              // surface transform, so moving
-                                              // the tray does not repaint them.
-                                              child: RepaintBoundary(
-                                                child: Stack(
-                                                  children: [content],
+                                      child: ClipRSuperellipse(
+                                        borderRadius: surfaceRadius,
+                                        clipBehavior: Clip.antiAlias,
+                                        // Gives Material widgets (TextField,
+                                        // InkWell, ListTile) and text styles a
+                                        // Material ancestor inside the tray.
+                                        child: Material(
+                                          type: MaterialType.transparency,
+                                          textStyle: textStyle,
+                                          child: Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              Positioned.fill(
+                                                // Isolates the pages from the
+                                                // surface transform, so moving
+                                                // the tray does not repaint them.
+                                                child: RepaintBoundary(
+                                                  child: Stack(
+                                                    children: [content],
+                                                  ),
                                                 ),
                                               ),
-                                            ),
-                                            if (footer != null)
+                                              if (footer != null)
+                                                Positioned(
+                                                  bottom: innerBottomPadding,
+                                                  left: 24,
+                                                  right: 24,
+                                                  child: footer,
+                                                ),
                                               Positioned(
-                                                bottom: innerBottomPadding,
-                                                left: 24,
-                                                right: 24,
-                                                child: footer,
-                                              ),
-                                            Positioned(
-                                              top: 8,
-                                              left: 0,
-                                              right: 0,
-                                              height: 28,
-                                              // The drag is the only way to
-                                              // close from the handle, so
-                                              // expose a dismiss action for
-                                              // assistive tech.
-                                              child: Semantics(
-                                                label: 'Close',
-                                                button: true,
-                                                onTap: widget.controller.close,
-                                                onDismiss:
-                                                    widget.controller.close,
-                                                child: GestureDetector(
-                                                  behavior:
-                                                      HitTestBehavior.opaque,
-                                                  onVerticalDragStart:
-                                                      _startDrag,
-                                                  onVerticalDragUpdate:
-                                                      _updateDrag,
-                                                  onVerticalDragEnd:
-                                                      (details) => _settleDrag(
-                                                        details.primaryVelocity ??
-                                                            0,
+                                                top: 8,
+                                                left: 0,
+                                                right: 0,
+                                                height: 28,
+                                                // The drag is the only way to
+                                                // close from the handle, so
+                                                // expose a dismiss action for
+                                                // assistive tech.
+                                                child: Semantics(
+                                                  label: 'Close',
+                                                  button: true,
+                                                  onTap:
+                                                      widget.controller.close,
+                                                  onDismiss:
+                                                      widget.controller.close,
+                                                  child: GestureDetector(
+                                                    behavior:
+                                                        HitTestBehavior.opaque,
+                                                    onVerticalDragStart:
+                                                        _startDrag,
+                                                    onVerticalDragUpdate:
+                                                        _updateDrag,
+                                                    onVerticalDragEnd:
+                                                        (
+                                                          details,
+                                                        ) => _settleDrag(
+                                                          details.primaryVelocity ??
+                                                              0,
+                                                        ),
+                                                    onVerticalDragCancel:
+                                                        _cancelDrag,
+                                                    child: const Align(
+                                                      alignment:
+                                                          Alignment.topCenter,
+                                                      child: Padding(
+                                                        padding:
+                                                            EdgeInsets.only(
+                                                              top: 8,
+                                                            ),
+                                                        child: TrayHandle(),
                                                       ),
-                                                  onVerticalDragCancel:
-                                                      _cancelDrag,
-                                                  child: const Align(
-                                                    alignment:
-                                                        Alignment.topCenter,
-                                                    child: Padding(
-                                                      padding: EdgeInsets.only(
-                                                        top: 8,
-                                                      ),
-                                                      child: TrayHandle(),
                                                     ),
                                                   ),
                                                 ),
                                               ),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),

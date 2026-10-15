@@ -29,6 +29,11 @@ context.tray.close('saved');
 `dismiss` close the whole session. Android system back also dismisses the tray.
 Give repeatedly reachable views a stable `viewId` so tapping the same
 destination again reuses its page instead of adding another history entry.
+A page without a `viewId` is released once it leaves the stack and its
+transition settles, so its state is not kept for a later visit. A page builder
+runs once for each page while it is in the stack, so a page that shows changing
+state should listen to that state itself. `context.tray` only issues commands
+and does not rebuild its readers when the tray changes.
 
 ## Layout and behavior
 
