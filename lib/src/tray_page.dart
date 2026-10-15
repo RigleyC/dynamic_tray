@@ -45,8 +45,9 @@ class TrayPage<T> {
 
   final TrayPageLayout layout;
 
-  /// Optional stable identity used by [TrayController.setView] to reuse a
-  /// previously visited page. It is also safe to omit for one-off views.
+  /// Optional stable identity: `setView` and `openTray` reuse the page already
+  /// bound to a `viewId` instead of stacking another one. It is also safe to
+  /// omit for one-off views.
   final String? viewId;
 
   /// The stable identifier used to recreate this page during restoration.

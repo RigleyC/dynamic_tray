@@ -235,6 +235,100 @@ void main() {
     expect(find.text('Root'), findsNothing);
     expect(await openedTray, 'done');
   });
+
+  testWidgets('pushes into the tray that is already open', (tester) async {
+    late BuildContext homeContext;
+    late Future<String?> rootTray;
+    var rootCompleted = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            homeContext = context;
+            return const Scaffold(body: Text('Home'));
+          },
+        ),
+      ),
+    );
+
+    rootTray = homeContext.openTray<String>(
+      builder: (_) => const _ReopenRootPage(),
+    );
+    rootTray.then((_) => rootCompleted = true).ignore();
+    await tester.pumpAndSettle();
+    expect(find.text('Root'), findsOneWidget);
+
+    // A context outside the tray asks for content. It joins the open tray
+    // instead of being ignored, and the first future stays pending.
+    final pushedPage = homeContext.openTray<String>(
+      builder: (_) => const _PopChildPage(),
+    );
+    await tester.pumpAndSettle();
+
+    // The page joined the tray that was already open: same session, the same
+    // controller, and the first future still pending.
+    expect(identical(_childPageController, _reopenController), isTrue);
+    expect(find.text('Child'), findsOneWidget);
+    expect(rootCompleted, isFalse);
+
+    await tester.tap(find.text('Child'));
+    await tester.pumpAndSettle();
+
+    expect(await pushedPage, 'child');
+    expect(find.text('Child'), findsNothing);
+    expect(find.text('Root'), findsOneWidget);
+    expect(rootCompleted, isFalse);
+  });
+
+  testWidgets('reuses the page bound to a repeated viewId', (tester) async {
+    late BuildContext homeContext;
+    var rootBuilds = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            homeContext = context;
+            return const Scaffold(body: Text('Home'));
+          },
+        ),
+      ),
+    );
+
+    homeContext
+        .openTray<String>(
+          viewId: 'root',
+          builder: (_) {
+            rootBuilds++;
+            return const _PushChildPage();
+          },
+        )
+        .ignore();
+    await tester.pumpAndSettle();
+    expect(rootBuilds, 1);
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    expect(find.text('Child'), findsOneWidget);
+
+    // The same viewId from outside must reuse the visited page instead of
+    // throwing and instead of stacking a second one.
+    homeContext
+        .openTray<String>(
+          viewId: 'root',
+          builder: (_) {
+            rootBuilds++;
+            return const _PushChildPage();
+          },
+        )
+        .ignore();
+    await tester.pumpAndSettle();
+
+    expect(rootBuilds, 1);
+    expect(find.text('Root'), findsOneWidget);
+    expect(find.text('Child'), findsNothing);
+  });
 }
 
 var _statefulRootInstances = 0;
@@ -292,6 +386,7 @@ class _MeasurementRootPageState extends State<_MeasurementRootPage> {
 
 TrayController? _measurementController;
 TrayController? _reopenController;
+TrayController? _childPageController;
 
 class _ReopenRootPage extends StatelessWidget {
   const _ReopenRootPage();
@@ -308,6 +403,39 @@ class _ReopenChildPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Text('Child');
+}
+
+/// Root page that pushes another page inside the same tray.
+class _PushChildPage extends StatelessWidget {
+  const _PushChildPage();
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      const Text('Root'),
+      GestureDetector(
+        onTap: () => context.tray.push<void>(
+          TrayPage(builder: (_) => const _ReopenChildPage()),
+        ),
+        child: const Text('Push'),
+      ),
+    ],
+  );
+}
+
+/// Page that returns a result when tapped.
+class _PopChildPage extends StatelessWidget {
+  const _PopChildPage();
+
+  @override
+  Widget build(BuildContext context) {
+    _childPageController = context.tray;
+    return GestureDetector(
+      onTap: () => context.tray.pop<String>('child'),
+      child: const Text('Child'),
+    );
+  }
 }
 
 class _MeasurementChildPage extends StatelessWidget {

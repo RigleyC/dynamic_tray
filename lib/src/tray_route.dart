@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 
 import 'tray_controller.dart';
 import 'tray_geometry.dart';
@@ -9,14 +10,17 @@ import 'tray_page.dart';
 import 'tray_surface.dart';
 import 'tray_scope.dart';
 
-final Expando<Object> _activeTrays = Expando<Object>(
-  'dynamic_tray active route',
+/// The tray controller owning each navigator's active tray, if any.
+final Expando<TrayController> _activeTrays = Expando<TrayController>(
+  'dynamic_tray active tray',
 );
 
 /// Opens a tray on the selected navigator.
 ///
-/// Each navigator hosts at most one tray at a time. An additional call while
-/// that tray is active is ignored and completes with `null`.
+/// Each navigator hosts at most one tray at a time. This is the low-level call
+/// that only opens: an additional call while that tray is active is ignored and
+/// completes with `null`. Use `openTray` when the caller does not know whether a
+/// tray is already open.
 Future<T?> showTray<T>({
   required BuildContext context,
   required TrayPage<T> page,
@@ -36,7 +40,6 @@ Future<T?> showTray<T>({
     return Future<T?>.value();
   }
 
-  final identity = Object();
   final result = navigator.push<T>(
     TrayRoute<T>(
       trayController: controller,
@@ -49,9 +52,9 @@ Future<T?> showTray<T>({
       surfaceColor: surfaceColor,
     ),
   );
-  _activeTrays[navigator] = identity;
+  _activeTrays[navigator] = controller;
   void release() {
-    if (identical(_activeTrays[navigator], identity)) {
+    if (identical(_activeTrays[navigator], controller)) {
       _activeTrays[navigator] = null;
     }
   }
@@ -64,6 +67,14 @@ Future<T?> showTray<T>({
   );
   return result;
 }
+
+/// The controller of the tray that owns [navigator], if a tray is active there.
+///
+/// The navigator keeps it until the tray's route completes, so a caller can
+/// push a page into that tray instead of opening a second one.
+@internal
+TrayController? activeTrayControllerFor(NavigatorState navigator) =>
+    _activeTrays[navigator];
 
 class TrayRoute<T> extends PopupRoute<T> {
   TrayRoute({

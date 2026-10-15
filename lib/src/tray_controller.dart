@@ -38,6 +38,14 @@ class TrayController extends ChangeNotifier {
   TrayPageTransition? get transition => _transition;
   bool get isRestorable => _pageRestorer != null;
 
+  /// Whether this tray owns its navigator's current route and is settled, so a
+  /// page requested from outside the tray can be pushed into it.
+  @internal
+  bool get isSurfaceReady =>
+      _lifecycle == TrayLifecycle.open &&
+      _route?.isCurrent == true &&
+      _transition == null;
+
   @internal
   late final List<TrayPage<dynamic>> pages = UnmodifiableListView(
     _visitedPages,
@@ -75,12 +83,46 @@ class TrayController extends ChangeNotifier {
     return entry.completer.future;
   }
 
+  /// Pushes a page requested from outside this tray, reusing the page already
+  /// bound to [viewId] when this tray visited one.
+  ///
+  /// A page created here uses [footer] as its footer slot and hides the tray
+  /// level footer when [footer] is null, so the content below keeps its own
+  /// footer out of the new page.
+  @internal
+  Future<T?> pushRequestedPage<T>({
+    required TrayPageBuilder builder,
+    String? viewId,
+    WidgetBuilder? footer,
+    TrayPageLayout layout = TrayPageLayout.intrinsic,
+  }) {
+    if (viewId != null) {
+      final existing = _visitedPages
+          .where((page) => page.viewId == viewId)
+          .firstOrNull;
+      if (existing != null) {
+        // The page belongs to the call that created it, so its result type is
+        // not known here. Narrow the value at this boundary.
+        return push<dynamic>(existing).then<T?>((value) => value as T?);
+      }
+    }
+    return push<T>(
+      TrayPage<T>(
+        builder: builder,
+        layout: layout,
+        viewId: viewId,
+        footerBuilder: footer,
+        hideFooter: footer == null,
+      ),
+    );
+  }
+
   /// Replaces the active view by pushing another view in this tray session.
   ///
-  /// This is the common navigation API. It keeps the same modal surface and
-  /// animates between the outgoing and incoming content. A non-null [viewId]
-  /// identifies a stable page definition; revisiting it reuses that page's
-  /// builder, footer, layout, and mounted state.
+  /// It keeps the same modal surface and animates between the outgoing and
+  /// incoming content. A non-null [viewId] identifies a stable page definition;
+  /// revisiting it reuses that page's builder, footer, layout, and mounted
+  /// state.
   void setView({
     required TrayPageBuilder builder,
     String? viewId,
