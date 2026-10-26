@@ -58,6 +58,8 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   static const double _footerReserve = 65;
   bool _isDragging = false;
   double _dragTranslation = 0;
+  bool _contentDragActive = false;
+  double _contentDragTranslation = 0;
   final GlobalKey _surfaceKey = GlobalKey();
   final TraySharedElementRegistry _sharedElementRegistry =
       TraySharedElementRegistry();
@@ -261,6 +263,34 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     _visualMotionKey.currentState?.settleDrag(velocity);
   }
 
+  // A list at its top keeps the extra pull as overscroll. That pull drags the
+  // tray, like the handle does, so the content and the tray hand off without a
+  // gap. Pulls that the list scrolls itself are left alone.
+  bool _handleContentScroll(ScrollNotification notification) {
+    final metrics = notification.metrics;
+    if (metrics.axis != Axis.vertical ||
+        metrics.axisDirection != AxisDirection.down) {
+      return false;
+    }
+    final coordinator = _visualMotionKey.currentState;
+    if (notification is OverscrollNotification) {
+      if (metrics.extentBefore > 0 || notification.overscroll >= 0) {
+        return false;
+      }
+      if (!_contentDragActive) {
+        _contentDragActive = true;
+        _contentDragTranslation = 0;
+        coordinator?.beginDrag();
+      }
+      _contentDragTranslation -= notification.overscroll;
+      coordinator?.dragTo(_contentDragTranslation);
+    } else if (notification is ScrollEndNotification && _contentDragActive) {
+      _contentDragActive = false;
+      coordinator?.settleDrag(notification.dragDetails?.primaryVelocity ?? 0);
+    }
+    return false;
+  }
+
   Widget _buildPageLayer({
     required BuildContext context,
     required Widget page,
@@ -384,7 +414,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
       );
     }
 
-    return Stack(fit: StackFit.expand, children: layers);
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleContentScroll,
+      child: Stack(fit: StackFit.expand, children: layers),
+    );
   }
 
   Widget _pageWidgetFor(BuildContext context, TrayPage<dynamic> page) {

@@ -146,6 +146,7 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       motion: widget.interactiveMotion,
       vsync: this,
     );
+    widget.controller.backGesture.addListener(_handleBackGesture);
     _syncPageMotions();
     // Start presentation as soon as the coordinator mounts. The surface is
     // still offscreen while its first intrinsic layout is measured.
@@ -166,6 +167,10 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
     );
     final transitionChanged = oldWidget.transition?.id != widget.transition?.id;
     final keyboardChanged = oldWidget.keyboardInset != widget.keyboardInset;
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.backGesture.removeListener(_handleBackGesture);
+      widget.controller.backGesture.addListener(_handleBackGesture);
+    }
     final closingStarted = !oldWidget.closing && widget.closing;
     if (closingStarted) {
       if (_presentationMotion.value <= 0.001) {
@@ -321,8 +326,30 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
         .toDouble();
   }
 
+  // The back gesture moves the tray with the same drag offset as a handle drag.
+  // Commit closes or pops it; cancel springs it back. A commit that closes the
+  // tray keeps the offset, so the close animation continues from where the
+  // gesture left off.
+  void _handleBackGesture() {
+    final progress = widget.controller.backGesture.value;
+    if (progress != null) {
+      _dragMotion.stop(canceled: true);
+      _dragMotion.value = progress * _geometryMotion.value.rect.height;
+      return;
+    }
+    if (widget.controller.lifecycle == TrayLifecycle.closing) return;
+    _dragMotion.motion = widget.interactiveMotion;
+    _dragMotion.animateTo(0);
+  }
+
+  // Dismisses when dragged past 30% of the tray's height, or flung faster than
+  // twice the viewport height per second. These are smooth_sheets' defaults.
+  bool _shouldDismiss(double velocityY) =>
+      _dragMotion.value > _geometryMotion.value.rect.height * 0.3 ||
+      velocityY > widget.viewportHeight * 2;
+
   void settleDrag(double velocityY) {
-    if (_dragMotion.value > 110 || velocityY > 1000) {
+    if (_shouldDismiss(velocityY)) {
       widget.controller.dismiss();
       return;
     }
@@ -337,6 +364,7 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
 
   @override
   void dispose() {
+    widget.controller.backGesture.removeListener(_handleBackGesture);
     _geometryMotion.dispose();
     _presentationMotion.dispose();
     _dragMotion.dispose();

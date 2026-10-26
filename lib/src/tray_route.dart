@@ -100,6 +100,7 @@ class TrayRoute<T> extends PopupRoute<T> {
   final Color? surfaceColor;
   final String? restorationId;
   Object? _pendingResult;
+  bool _backGestureActive = false;
 
   @override
   Color? get barrierColor => _barrierColor;
@@ -166,6 +167,43 @@ class TrayRoute<T> extends PopupRoute<T> {
     Widget child,
   ) {
     return child;
+  }
+
+  // The route only pops through the predictive back gesture when it is allowed
+  // to, so a page that blocks back (TrayPopScope) also blocks the gesture.
+  @override
+  bool get popGestureEnabled =>
+      super.popGestureEnabled && popDisposition == RoutePopDisposition.pop;
+
+  @override
+  void handleStartBackGesture({double progress = 0.0}) {
+    if (!popGestureEnabled) return;
+    _backGestureActive = true;
+    super.handleStartBackGesture(progress: progress);
+    trayController.backGesture.value = progress;
+  }
+
+  @override
+  void handleUpdateBackGestureProgress({required double progress}) {
+    if (!_backGestureActive) return;
+    super.handleUpdateBackGestureProgress(progress: progress);
+    trayController.backGesture.value = progress;
+  }
+
+  @override
+  void handleCommitBackGesture() {
+    if (!_backGestureActive) return;
+    _backGestureActive = false;
+    super.handleCommitBackGesture();
+    trayController.backGesture.value = null;
+  }
+
+  @override
+  void handleCancelBackGesture() {
+    if (!_backGestureActive) return;
+    _backGestureActive = false;
+    super.handleCancelBackGesture();
+    trayController.backGesture.value = null;
   }
 
   @override

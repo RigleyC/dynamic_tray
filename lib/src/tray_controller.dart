@@ -16,6 +16,12 @@ class TrayController extends ChangeNotifier {
     _visitedPages.add(initialPage);
   }
 
+  /// Progress of a system back gesture from 0 to 1, or null when none is
+  /// active. The surface listens to this directly, so each frame of the
+  /// gesture does not rebuild the tray.
+  @internal
+  final ValueNotifier<double?> backGesture = ValueNotifier<double?>(null);
+
   final List<_TrayEntry<dynamic>> _entries = [];
   final List<TrayPage<dynamic>> _visitedPages = [];
   final TrayPageRestorer? _pageRestorer;
@@ -380,6 +386,12 @@ class TrayController extends ChangeNotifier {
 
   @internal
   void markClosed() => _setLifecycle(TrayLifecycle.closed);
+
+  @override
+  void dispose() {
+    backGesture.dispose();
+    super.dispose();
+  }
 
   @internal
   void completeRoute([Object? result]) {

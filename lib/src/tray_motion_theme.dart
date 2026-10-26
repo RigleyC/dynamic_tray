@@ -43,7 +43,7 @@ class TrayMotionTheme {
     required this.interactive,
     this.travel = const TrayTravel.measured(),
     this.dragFadeDistance = 240.0,
-    this.pageScale = 0.94,
+    this.pageScale = 0.9,
   });
 
   /// Motor motion for the tray's presentation spring when opening.
