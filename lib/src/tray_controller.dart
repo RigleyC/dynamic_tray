@@ -94,7 +94,7 @@ class TrayController extends ChangeNotifier {
     required TrayPageBuilder builder,
     String? viewId,
     WidgetBuilder? footer,
-    TrayPageLayout layout = TrayPageLayout.intrinsic,
+    TrayPageLayout layout = TrayPageLayout.auto,
   }) {
     if (viewId != null) {
       final existing = _visitedPages
@@ -127,7 +127,7 @@ class TrayController extends ChangeNotifier {
     required TrayPageBuilder builder,
     String? viewId,
     WidgetBuilder? footer,
-    TrayPageLayout layout = TrayPageLayout.intrinsic,
+    TrayPageLayout layout = TrayPageLayout.auto,
   }) {
     if (viewId != null && viewId.isEmpty) {
       throw ArgumentError.value(viewId, 'viewId', 'Must not be empty.');

@@ -43,6 +43,7 @@ class TrayMotionTheme {
     required this.interactive,
     this.travel = const TrayTravel.measured(),
     this.dragFadeDistance = 240.0,
+    this.pageScale = 0.94,
   });
 
   /// Motor motion for the tray's presentation spring when opening.
@@ -76,6 +77,12 @@ class TrayMotionTheme {
   /// tray's height.
   final double dragFadeDistance;
 
+  /// Scale of a page at the hidden end of a page change. An incoming page
+  /// grows from this scale to 1 while it fades in, and an outgoing page shrinks
+  /// to it while it fades out. Uses [effects] and [effectsExit], so it shares
+  /// the page crossfade's curve. Use 1 to keep a plain crossfade.
+  final double pageScale;
+
   /// Matches the original React Native tray: slow spring in, long fixed travel,
   /// and the same curve for page entry and exit.
   factory TrayMotionTheme.original() {
@@ -100,6 +107,7 @@ class TrayMotionTheme {
       ),
       travel: TrayTravel.fixed(1000),
       dragFadeDistance: 1000,
+      pageScale: 1,
     );
   }
 

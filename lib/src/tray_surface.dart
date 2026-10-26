@@ -267,18 +267,28 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     required TrayPage<dynamic> pageEntry,
     required double width,
     required double height,
+    required double boundedHeight,
     required bool measure,
     required TrayGeometry Function(Size) geometryForSize,
     required bool visible,
     required bool interactive,
     required double opacity,
+    required double pageScale,
     required TrayPageTransition? transition,
   }) {
+    // An auto page is capped at the available height. Content that fits keeps
+    // its height, and a scroll view fills the cap, so the tray sizes to it.
+    final isAuto = pageEntry.layout == TrayPageLayout.auto;
     Widget child = SizedBox(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: page,
+        child: isAuto
+            ? ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: boundedHeight),
+                child: page,
+              )
+            : page,
       ),
     );
     child = TraySharedElementScope(
@@ -300,13 +310,17 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
       child = Align(alignment: Alignment.topCenter, child: child);
     }
 
+    final progress = opacity.clamp(0.0, 1.0).toDouble();
+    // Scales from [pageScale] at progress 0 to 1 at progress 1, so incoming
+    // and outgoing pages share the crossfade's curve.
+    final scale = 1 - (1 - pageScale) * (1 - progress);
     final layer = Offstage(
       offstage: !visible,
       child: IgnorePointer(
         ignoring: !interactive,
         child: Opacity(
-          opacity: opacity.clamp(0.0, 1.0).toDouble(),
-          child: child,
+          opacity: progress,
+          child: Transform.scale(scale: scale, child: child),
         ),
       ),
     );
@@ -336,6 +350,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     required Map<TrayPage<dynamic>, double> pageProgresses,
     required double restingHeight,
     required double boundedHeight,
+    required double pageScale,
     required TrayGeometry Function(TrayPage<dynamic>, Size) geometryForSize,
   }) {
     final outgoingIndex = transition == null
@@ -358,10 +373,12 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
               ? boundedHeight
               : restingHeight,
           measure: isCurrent,
+          boundedHeight: boundedHeight,
           geometryForSize: (size) => geometryForSize(page, size),
           visible: visible,
           interactive: isCurrent,
           opacity: progress,
+          pageScale: pageScale,
           transition: transition,
         ),
       );
@@ -551,6 +568,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                             // current page, whatever page is shown now, so the
                             // surface reveals it instead of relaying it out.
                             boundedHeight: boundedFallbackHeight,
+                            pageScale: widget.motionTheme.pageScale,
                             geometryForSize: (page, size) =>
                                 _geometryForContentSize(
                                   page,

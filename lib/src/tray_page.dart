@@ -5,6 +5,14 @@ typedef TrayPageRestorer =
     TrayPage<dynamic> Function(String restorationId, Object? arguments);
 
 enum TrayPageLayout {
+  /// The tray picks the height itself.
+  ///
+  /// The page is measured with the available height as its maximum. Content
+  /// that fits keeps its own height, like [TrayPageLayout.intrinsic]. Content
+  /// that does not fit, or a scroll view that fills the space, takes the full
+  /// available height, like [TrayPageLayout.bounded].
+  auto,
+
   /// The page determines its own height from intrinsic content.
   ///
   /// Use this for finite, non-scrollable content. Scroll views and slivers
@@ -24,7 +32,7 @@ class TrayPage<T> {
     this.footer,
     this.footerBuilder,
     this.hideFooter = false,
-    this.layout = TrayPageLayout.intrinsic,
+    this.layout = TrayPageLayout.auto,
     this.viewId,
     this.restorationId,
     this.restorationArguments,

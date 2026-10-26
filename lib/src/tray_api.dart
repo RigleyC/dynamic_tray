@@ -20,7 +20,7 @@ extension TrayOpenContext on BuildContext {
     required TrayPageBuilder builder,
     String? viewId,
     WidgetBuilder? footer,
-    TrayPageLayout layout = TrayPageLayout.intrinsic,
+    TrayPageLayout layout = TrayPageLayout.auto,
   }) {
     final controller = activeTrayControllerFor(
       Navigator.of(this, rootNavigator: true),
