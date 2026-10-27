@@ -350,7 +350,13 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
         ignoring: !interactive,
         child: Opacity(
           opacity: progress,
-          child: Transform.scale(scale: scale, child: child),
+          // Grows from the top edge, so the header stays put while the body
+          // scales, as in the reference video.
+          child: Transform.scale(
+            scale: scale,
+            alignment: Alignment.topCenter,
+            child: child,
+          ),
         ),
       ),
     );
