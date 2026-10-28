@@ -304,6 +304,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     required bool interactive,
     required double opacity,
     required double pageScale,
+    required bool inFront,
     required TrayPageTransition? transition,
   }) {
     // An auto page is capped at the available height. Content that fits keeps
@@ -341,22 +342,17 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     }
 
     final progress = opacity.clamp(0.0, 1.0).toDouble();
-    // Scales from [pageScale] at progress 0 to 1 at progress 1, so incoming
-    // and outgoing pages share the crossfade's curve.
-    final scale = 1 - (1 - pageScale) * (1 - progress);
+    // A hidden page sits behind the current one (smaller) or in front of it
+    // (larger), and reaches 1 as it becomes visible, on the crossfade's curve.
+    final depth = (1 - pageScale) * (1 - progress);
+    final scale = inFront ? 1 + depth : 1 - depth;
     final layer = Offstage(
       offstage: !visible,
       child: IgnorePointer(
         ignoring: !interactive,
         child: Opacity(
           opacity: progress,
-          // Grows from the top edge, so the header stays put while the body
-          // scales, as in the reference video.
-          child: Transform.scale(
-            scale: scale,
-            alignment: Alignment.topCenter,
-            child: child,
-          ),
+          child: Transform.scale(scale: scale, child: child),
         ),
       ),
     );
@@ -415,6 +411,11 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
           interactive: isCurrent,
           opacity: progress,
           pageScale: pageScale,
+          // Forward, the outgoing page leaves toward the viewer. Back, the
+          // incoming page arrives from there.
+          inFront:
+              transition != null &&
+              (transition.isPush ? isOutgoing : isCurrent),
           transition: transition,
         ),
       );
