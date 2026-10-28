@@ -116,17 +116,18 @@ class TrayMotionTheme {
   /// Faster than [TrayMotionTheme.original]. The travel is measured, so the
   /// spring is stiffer to cover fewer pixels in the same perceptual window.
   ///
-  /// Page changes drive height and crossfade on one shared timeline with no
-  /// overshoot, so the tray and its content always finish together.
+  /// Page changes use an ease-out with no overshoot: the depth and crossfade
+  /// move most in their first frames, so the change reads as depth rather
+  /// than a fade, and the height settles just after them.
   factory TrayMotionTheme.snappy() {
     return const TrayMotionTheme(
       route: SpringMotion(
         SpringDescription(mass: 1, stiffness: 400, damping: 34),
       ),
       close: CurvedMotion(Duration(milliseconds: 220), Cubic(0.4, 0, 0.8, 1)),
-      geometry: _pageChangeMotion,
-      effects: _pageChangeMotion,
-      effectsExit: _pageChangeMotion,
+      geometry: _pageHeightMotion,
+      effects: _pageDepthMotion,
+      effectsExit: _pageDepthMotion,
       interactive: SpringMotion(
         SpringDescription(mass: 1, stiffness: 260, damping: 24),
       ),
@@ -134,8 +135,17 @@ class TrayMotionTheme {
   }
 }
 
-/// One timeline for page changes: tray height and page crossfade share it.
-const _pageChangeMotion = CurvedMotion(
-  Duration(milliseconds: 220),
-  Cubic(0.455, 0.03, 0.515, 0.955),
+// Ease-out quad, measured from the reference recording.
+const _pageChangeCurve = Cubic(0.25, 0.46, 0.45, 0.94);
+
+/// Page depth and crossfade.
+const _pageDepthMotion = CurvedMotion(
+  Duration(milliseconds: 140),
+  _pageChangeCurve,
+);
+
+/// Tray height during a page change, a little longer than the depth.
+const _pageHeightMotion = CurvedMotion(
+  Duration(milliseconds: 180),
+  _pageChangeCurve,
 );
