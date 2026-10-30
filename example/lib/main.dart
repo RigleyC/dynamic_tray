@@ -61,14 +61,30 @@ class ExampleHomePage extends StatelessWidget {
     ).showSnackBar(SnackBar(content: Text('Tray result: $result')));
   }
 
+  Future<void> _openSharedTray(BuildContext context) {
+    return context.openTray<String>(
+      builder: (_) => const SharedElementRootView(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Dynamic Tray')),
       body: Center(
-        child: FilledButton(
-          onPressed: () => _openTray(context),
-          child: const Text('Open details'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FilledButton(
+              onPressed: () => _openTray(context),
+              child: const Text('Open details'),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.tonal(
+              onPressed: () => _openSharedTray(context),
+              child: const Text('Open shared element flow'),
+            ),
+          ],
         ),
       ),
     );
@@ -189,6 +205,132 @@ class WalletDetailsView extends StatelessWidget {
           child: const Text('Close'),
         ),
       ],
+    );
+  }
+}
+
+/// Root of the shared element flow. Its counter is the shared element: it keeps
+/// running while it flies to the details page.
+class SharedElementRootView extends StatelessWidget {
+  const SharedElementRootView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ExampleTrayHeader(
+          icon: Icons.close_rounded,
+          title: 'Shared element',
+          subtitle: 'The counter keeps running while it moves.',
+          onLeadingPressed: () => context.tray.close(),
+          leadingTooltip: 'Close tray',
+        ),
+        const SizedBox(height: 16),
+        const Center(
+          child: TraySharedElement(tag: 'counter', child: LiveCounter()),
+        ),
+        const SizedBox(height: 16),
+        FilledButton(
+          onPressed: () => context.tray.setView(
+            builder: (_) => const SharedElementDetailsView(),
+            viewId: 'shared-details',
+          ),
+          child: const Text('Open details'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Taller destination page with a text field. The counter lands in the
+/// reserved target above the field.
+class SharedElementDetailsView extends StatelessWidget {
+  const SharedElementDetailsView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ExampleTrayHeader(
+          icon: Icons.arrow_back_rounded,
+          title: 'Details',
+          subtitle: 'The same counter, still counting.',
+          onLeadingPressed: context.tray.goBack,
+        ),
+        const SizedBox(height: 16),
+        const Center(
+          child: TraySharedElement.target(tag: 'counter', width: 160, height: 56),
+        ),
+        const SizedBox(height: 16),
+        const TextField(
+          decoration: InputDecoration(
+            labelText: 'Notes',
+            hintText: 'Type while the counter runs',
+          ),
+        ),
+        const SizedBox(height: 12),
+        for (var line = 1; line <= 4; line++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text('Detail line $line'),
+          ),
+        TextButton(
+          onPressed: () => context.tray.pop('saved'),
+          child: const Text('Save and go back'),
+        ),
+      ],
+    );
+  }
+}
+
+/// A counter that ticks every quarter second. Its State is what the shared
+/// element must keep across the transition.
+class LiveCounter extends StatefulWidget {
+  const LiveCounter({super.key});
+
+  @override
+  State<LiveCounter> createState() => _LiveCounterState();
+}
+
+class _LiveCounterState extends State<LiveCounter> {
+  Timer? _timer;
+  int _count = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      setState(() => _count++);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: 160,
+      height: 56,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Text(
+        'Count $_count',
+        style: theme.textTheme.titleMedium?.copyWith(
+          color: theme.colorScheme.onPrimaryContainer,
+        ),
+      ),
     );
   }
 }

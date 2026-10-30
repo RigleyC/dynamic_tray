@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' as flutter_material;
 import 'package:material_ui/material_ui.dart';
 
 // Material's Theme widget also provides a CupertinoTheme built from the
@@ -17,10 +18,15 @@ Color traySurfaceColorOf(BuildContext context) => CupertinoDynamicColor.resolve(
   context,
 );
 
-/// The text style for the tray's Material wrapper. Under MaterialApp this is
-/// null so Material uses `bodyMedium`. Under CupertinoApp it keeps the ambient
-/// Cupertino style instead of the default Material theme's.
-TextStyle? trayTextStyleOf(BuildContext context) =>
-    context.findAncestorWidgetOfExactType<Theme>() == null
-    ? DefaultTextStyle.of(context).style
-    : null;
+/// The text style for the tray's Material wrapper. Under a Material app (either
+/// Flutter's or material_ui's) this is null so Material uses `bodyMedium` from
+/// that app's theme. Under CupertinoApp it keeps the ambient Cupertino style.
+///
+/// The check has to look for both Theme classes. A MaterialApp provides
+/// Flutter's Theme, which material_ui's Theme type does not match.
+TextStyle? trayTextStyleOf(BuildContext context) {
+  final underMaterialTheme =
+      context.findAncestorWidgetOfExactType<Theme>() != null ||
+      context.findAncestorWidgetOfExactType<flutter_material.Theme>() != null;
+  return underMaterialTheme ? null : DefaultTextStyle.of(context).style;
+}

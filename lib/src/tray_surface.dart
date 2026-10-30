@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+// material_ui ships its own Material. Flutter's TextField, Checkbox and other
+// material widgets look up Flutter's Material, so the tray provides both.
+import 'package:flutter/material.dart' as flutter_material;
 import 'package:flutter/rendering.dart' show RenderBox, RenderProxyBox;
 import 'package:motor/motor.dart';
 
@@ -60,7 +63,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   double _dragTranslation = 0;
   bool _contentDragActive = false;
   double _contentDragTranslation = 0;
-  final GlobalKey _surfaceKey = GlobalKey();
+  // Marks the stack that holds the pages and the shared-element flights. Its
+  // coordinates ignore the surface's own offset, scale and drag, so flights
+  // measured here move with the tray.
+  final GlobalKey _contentStackKey = GlobalKey();
   final TraySharedElementRegistry _sharedElementRegistry =
       TraySharedElementRegistry();
   final GlobalKey<_TrayMotionCoordinatorState> _visualMotionKey =
@@ -114,6 +120,11 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     _contentSizes.removeWhere((page, _) => !retainedPages.contains(page));
     _pageWidgets.removeWhere((page, _) => !retainedPages.contains(page));
     _footers.removeWhere((page, _) => !retainedPages.contains(page));
+    _sharedElementRegistry.retainPages(retainedPages);
+    if (transition != null) {
+      // Runs before any frame moves the outgoing page, so its rect is at rest.
+      _sharedElementRegistry.beginTransition(transition);
+    }
   }
 
   @override
@@ -139,14 +150,14 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   }
 
   Rect? _toLocalRect(RenderBox renderObject) {
-    final surface = _surfaceKey.currentContext?.findRenderObject();
-    if (surface is! RenderBox || !surface.hasSize || !renderObject.attached) {
+    final content = _contentStackKey.currentContext?.findRenderObject();
+    if (content is! RenderBox || !content.hasSize || !renderObject.attached) {
       return null;
     }
-    final topLeft = surface.globalToLocal(
+    final topLeft = content.globalToLocal(
       renderObject.localToGlobal(Offset.zero),
     );
-    final bottomRight = surface.globalToLocal(
+    final bottomRight = content.globalToLocal(
       renderObject.localToGlobal(renderObject.size.bottomRight(Offset.zero)),
     );
     return Rect.fromPoints(topLeft, bottomRight);
@@ -199,6 +210,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     );
     if (!isCurrentPage && !isOutgoingPage) {
       return;
+    }
+    if (isCurrentPage) {
+      // Lets a transition to this page start, now that its elements exist.
+      _sharedElementRegistry.pageLaidOut(page);
     }
     final isInitialMeasurement = isCurrentPage && !_hasInitialMeasurement;
     final updatesFallbackSize =
@@ -302,9 +317,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     required TrayGeometry Function(Size) geometryForSize,
     required bool visible,
     required bool interactive,
+    required bool current,
     required double opacity,
     required double pageScale,
-    required bool inFront,
     required TrayPageTransition? transition,
   }) {
     // An auto page is capped at the available height. Content that fits keeps
@@ -325,6 +340,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     child = TraySharedElementScope(
       registry: _sharedElementRegistry,
       page: pageEntry,
+      current: current,
       transition: transition,
       toLocalRect: _toLocalRect,
       child: child,
@@ -342,10 +358,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     }
 
     final progress = opacity.clamp(0.0, 1.0).toDouble();
-    // A hidden page sits behind the current one (smaller) or in front of it
-    // (larger), and reaches 1 as it becomes visible, on the crossfade's curve.
-    final depth = (1 - pageScale) * (1 - progress);
-    final scale = inFront ? 1 + depth : 1 - depth;
+    // A page grows from pageScale to 1 as it appears and shrinks back as it
+    // leaves. Both directions read the same progress, so the scale shares the
+    // fade's curve, as the Expo view layer does.
+    final scale = pageScale + (1 - pageScale) * progress;
     final layer = Offstage(
       offstage: !visible,
       child: IgnorePointer(
@@ -409,13 +425,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
           geometryForSize: (size) => geometryForSize(page, size),
           visible: visible,
           interactive: isCurrent,
+          current: isCurrent,
           opacity: progress,
           pageScale: pageScale,
-          // Forward, the outgoing page leaves toward the viewer. Back, the
-          // incoming page arrives from there.
-          inFront:
-              transition != null &&
-              (transition.isPush ? isOutgoing : isCurrent),
           transition: transition,
         ),
       );
@@ -455,13 +467,20 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     widget.controller.close();
   }
 
+  // Flights share the incoming page's progress, so they land with the page
+  // they reveal. Their destination is read on every frame, so it follows the
+  // page's growth and scale instead of the bounds from its first layout.
   List<Widget> _buildSharedElementFlights(
     BuildContext context,
     TrayPageTransition? transition,
+    Map<TrayPage<dynamic>, double> pageProgresses,
   ) {
     if (transition == null) {
       return const [];
     }
+    final progress = (pageProgresses[transition.incoming] ?? 0)
+        .clamp(0.0, 1.0)
+        .toDouble();
     return [
       for (final match in _sharedElementRegistry.matches(transition))
         _TraySharedElementFlight(
@@ -470,10 +489,16 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
           ),
           from: match.outgoingRect,
           to: match.incomingRect,
-          motion: widget.motionTheme.effects,
-          child: match.flightBuilder?.call(context, match.child) ?? match.child,
+          progress: progress,
+          child: _flightChild(context, match),
         ),
     ];
+  }
+
+  Widget _flightChild(BuildContext context, TraySharedElementMatch match) {
+    // The flight takes over the live element, so the content keeps its State.
+    final live = KeyedSubtree(key: match.contentKey, child: match.child);
+    return match.flightBuilder?.call(context, live) ?? live;
   }
 
   @override
@@ -559,7 +584,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
               listenable: _sharedElementRegistry,
               builder: (context, _) {
                 return Stack(
-                  key: _surfaceKey,
                   fit: StackFit.expand,
                   children: [
                     _TrayMotionCoordinator(
@@ -571,6 +595,11 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                       ),
                       pages: pages,
                       transition: transition,
+                      // The page motion waits until the incoming page and its
+                      // shared elements are measured, so no frame shows a gap.
+                      transitionReady:
+                          transition == null ||
+                          _sharedElementRegistry.isReady(transition),
                       geometryMotion: widget.motionTheme.geometry,
                       effectsMotion: widget.motionTheme.effects,
                       effectsExitMotion: widget.motionTheme.effectsExit,
@@ -680,7 +709,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                         child: Material(
                                           type: MaterialType.transparency,
                                           textStyle: textStyle,
-                                          child: Stack(
+                                          child: flutter_material.Material(
+                                            type: flutter_material.MaterialType.transparency,
+                                            textStyle: textStyle,
+                                            child: Stack(
                                             fit: StackFit.expand,
                                             children: [
                                               Positioned.fill(
@@ -689,7 +721,15 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                                 // the tray does not repaint them.
                                                 child: RepaintBoundary(
                                                   child: Stack(
-                                                    children: [content],
+                                                    key: _contentStackKey,
+                                                     children: [
+                                                       content,
+                                                       ..._buildSharedElementFlights(
+                                                         context,
+                                                         transition,
+                                                         visualState.pageProgresses,
+                                                       ),
+                                                     ],
                                                   ),
                                                 ),
                                               ),
@@ -748,6 +788,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                               ),
                                             ],
                                           ),
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -755,7 +796,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                 ),
                               ),
                             ),
-                            ..._buildSharedElementFlights(context, transition),
                           ],
                         );
                       },
@@ -845,26 +885,21 @@ class _TraySharedElementFlight extends StatelessWidget {
     super.key,
     required this.from,
     required this.to,
-    required this.motion,
+    required this.progress,
     required this.child,
   });
 
   final Rect from;
   final Rect to;
-  final Motion motion;
+  final double progress;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return MotionBuilder<Rect>(
-      value: to,
-      from: from,
-      converter: const RectMotionConverter(),
-      motion: motion,
+    final rect = Rect.lerp(from, to, progress) ?? to;
+    return Positioned.fromRect(
+      rect: rect,
       child: IgnorePointer(child: child),
-      builder: (context, rect, child) {
-        return Positioned.fromRect(rect: rect, child: child!);
-      },
     );
   }
 }

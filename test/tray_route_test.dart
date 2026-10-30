@@ -100,8 +100,11 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
 
-    expect(resolver.heights, contains(40));
-    expect(resolver.heights, contains(120));
+    // The resolver receives the page height plus the 36 px handle area and the
+    // 24 px bottom padding, so a 40 px root page measures 100 and a 120 px child
+    // page measures 180.
+    expect(resolver.heights, contains(100));
+    expect(resolver.heights, contains(180));
 
     _measurementController!.pop<void>();
     await tester.pumpAndSettle();
@@ -156,7 +159,9 @@ void main() {
     expect(await openedTray, 'done');
   });
 
-  testWidgets('dragging a child page pops it', (tester) async {
+  testWidgets('dragging the handle past its threshold dismisses the tray', (
+    tester,
+  ) async {
     late Future<String?> openedTray;
 
     await tester.pumpWidget(
@@ -193,12 +198,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Root'), findsOneWidget);
+    // The handle closes the whole tray past its 110 px threshold, whichever page
+    // is showing. Back pops a page instead.
+    expect(find.text('Root'), findsNothing);
     expect(find.text('Child'), findsNothing);
-
-    _reopenController!.dismiss('done');
-    await tester.pumpAndSettle();
-    expect(await openedTray, 'done');
+    expect(await openedTray, isNull);
   });
 
   testWidgets('keeps the route mounted while dismissing', (tester) async {

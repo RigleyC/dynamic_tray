@@ -12,7 +12,7 @@ void main() {
     final route = TrayRoute<void>(
       trayController: controller,
       geometryResolver: const DefaultTrayGeometryResolver(),
-      motionTheme: TrayMotionTheme.snappy(),
+      motionTheme: TrayMotionTheme.expo(),
       barrierColor: Colors.black54,
       barrierDismissible: true,
     );

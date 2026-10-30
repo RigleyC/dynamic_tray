@@ -53,7 +53,7 @@ Route<void> _buildRestorableTray(BuildContext context, Object? arguments) {
   return TrayRoute<void>(
     trayController: controller,
     geometryResolver: const DefaultTrayGeometryResolver(),
-    motionTheme: TrayMotionTheme.snappy(),
+    motionTheme: TrayMotionTheme.expo(),
     barrierColor: Colors.black54,
     barrierDismissible: true,
     restorationId: 'stack',

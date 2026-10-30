@@ -78,19 +78,15 @@ and does not rebuild its readers when the tray changes.
   keyboard open, the tray sits 8 px above it. There is no default
   width cap, so the 8 px side gaps hold on every phone; set `maxWidth` on
   the geometry resolver to opt into a centered width limit.
-- Opening starts the spring as soon as the tray mounts, with a 0.94-to-1
-  scale. The first measured content size is applied directly; later
-  content-height changes animate with the theme's `geometry` motion. In the
-  default theme, page changes drive the height and the page crossfade on one
-  shared 220 ms timeline, with no page scale and no overshoot.
-- `TrayMotionTheme.snappy()` is the default. It uses `TrayTravel.measured()`,
-  so the tray starts exactly one tray height plus a small gap below the
-  viewport and moves on the first frame, with a stiffer `400/34` spring and a
-  220 ms close. Height and page crossfade share one 220 ms curve for page
-  changes.
-- `TrayMotionTheme.original()` matches the reference: a `240/26` spring over
-  `TrayTravel.fixed(1000)`, a 340 ms close, and the same 370 ms curve for
-  page entry and exit. Pass it to `showTray` to get the reference timings.
+- Opening starts the presentation spring as soon as the tray mounts, with a
+  0.94-to-1 scale. The first measured content size is applied directly; later
+  content-height changes animate on a `185/0.6/15` spring.
+- `TrayMotionTheme.expo()` is the default and matches the Expo Dynamic Tray
+  timings: a `240/26` presentation spring over `TrayTravel.fixed(1000)`, a
+  340 ms close, and a 370 ms ease for page changes. Entering pages grow from
+  0.96 to 1 while they fade in, and leaving pages shrink to 0.96 while they
+  fade out.
+- Shared elements keep their State across a transition. See the next section.
 - Page widgets and footers are cached per page while the page is in the stack.
   `builder`, `footerBuilder` and `footer` run once, not on every controller
   notification, keyboard frame or lifecycle change. Read Theme, localizations
@@ -108,9 +104,8 @@ and does not rebuild its readers when the tray changes.
 - One visual state keeps bounds, radius, scale, backdrop, keyboard/drag offset,
   and page progress synchronized. Motor drives the state through independent
   channels so each transition keeps the reference's spring or timing profile.
-  `TrayMotionTheme.snappy()` (default) is the faster profile;
-  `TrayMotionTheme.original()` matches the reference timings. Both can be
-  customized.
+  `TrayMotionTheme.expo()` (default) matches the reference timings. Customize
+  any field to change the feel.
   Per-frame travel, drag, and keyboard offsets are applied as a transform, so
   the stack lays out the tray at its resting bounds and never relayouts while it
   animates. The backdrop folds its progress into the barrier alpha instead of
@@ -119,10 +114,49 @@ and does not rebuild its readers when the tray changes.
 
 `TrayHeader` is an optional neutral layout helper; the package does not impose
 Material or Cupertino widgets, app colors, or typography on page content.
+The tray provides both Flutter's `Material` and material_ui's `Material`, so
+`TextField`, `InkWell`, `Checkbox` and other widgets from either library find a
+Material ancestor. Plain `Text` inherits the Material theme's body style, or the
+ambient Cupertino style under `CupertinoApp`.
+
+## Shared elements
+
+A `TraySharedElement` with a `child` owns one live element. The owner keeps the
+content, its State included, and a destination on another page declares an empty
+`TraySharedElement.target` with the bounds it reserves:
+
+```dart
+// Root page: owns the live counter.
+TraySharedElement(tag: 'counter', child: const LiveCounter())
+
+// Details page: reserves 160 by 56 for it.
+TraySharedElement.target(tag: 'counter', width: 160, height: 56)
+```
+
+- The content moves between the owner, the flight, and the destination. It is
+  the same element all along, so its State survives: `initState` runs once
+  per content, not once per push or pop.
+- While a transition runs, the owner and the target show placeholders of the
+  same size, and the flight shows the live content inside the tray. The flight
+  moves with the tray's offset, scale, and drag.
+- The flight follows the incoming page's progress, so it lands with the page.
+  The destination is read on every frame, so the flight follows a tray that is
+  still growing.
+- A transition does not start until the incoming page and its targets have been
+  measured, so no frame shows the element missing.
+- A transition ends only after the tray's height has settled. The flight hands
+  the content over at the live destination, so there is no jump at the end.
+- An element without a destination on the incoming page falls back to the page
+  transition: its content leaves with its page.
+- A `TraySharedElement` with a `child` and no matching target on another page
+  keeps its own content, so it works without a target on the other side.
 
 ## Example
 
 The example shows `TrayHeader` with a close icon on the first view and back
-icons on later views. To run it on Android, use `cd example`, run
+icons on later views. The "Open shared element flow" button opens a root view
+with a running counter; "Open details" moves the counter to a taller details
+page with a `TextField`. "Save and go back" returns to the root, and the counter
+keeps counting. To run it on Android, use `cd example`, run
 `flutter create --platforms android .` once to generate the local runner, then
 run `flutter run`.

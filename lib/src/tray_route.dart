@@ -44,7 +44,7 @@ Future<T?> showTray<T>({
     TrayRoute<T>(
       trayController: controller,
       geometryResolver: geometryResolver,
-      motionTheme: motionTheme ?? TrayMotionTheme.snappy(),
+      motionTheme: motionTheme ?? TrayMotionTheme.expo(),
       barrierColor: barrierColor,
       barrierDismissible: barrierDismissible,
       footer: footer,

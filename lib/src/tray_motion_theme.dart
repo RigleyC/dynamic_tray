@@ -31,19 +31,19 @@ class TrayMotionTheme {
   const TrayMotionTheme({
     required this.route,
     this.close = const CurvedMotion(
-      Duration(milliseconds: 220),
-      Cubic(0.4, 0, 0.8, 1),
+      Duration(milliseconds: 340),
+      _closeCurve,
     ),
     required this.geometry,
     required this.effects,
     this.effectsExit = const CurvedMotion(
-      Duration(milliseconds: 180),
-      Cubic(0.42, 0, 1, 1),
+      Duration(milliseconds: 370),
+      _viewCurve,
     ),
     required this.interactive,
-    this.travel = const TrayTravel.measured(),
+    this.travel = const TrayTravel.fixed(1000),
     this.dragFadeDistance = 240.0,
-    this.pageScale = 0.88,
+    this.pageScale = 0.96,
   });
 
   /// Motor motion for the tray's presentation spring when opening.
@@ -51,17 +51,20 @@ class TrayMotionTheme {
 
   /// Motor motion for the tray's timed close.
   ///
-  /// Pair its curve with [travel]. With a measured travel almost the whole
-  /// curve maps to visible pixels, so a near-linear mild ease-in reads best.
+  /// Pair its curve with [travel]. The close is a timed ease-in, so the tray
+  /// accelerates out of view.
   final Motion close;
 
   /// Motor motion for changes to the tray's bounds and corner radius.
   final Motion geometry;
 
-  /// Motion for page content and shared-element effects, not tray bounds.
+  /// Motion for page content and shared-element flights, not tray bounds.
+  ///
+  /// A page change runs its fade and scale on this motion. Shared-element
+  /// flights follow the incoming page's progress, so they land with it.
   final Motion effects;
 
-  /// Faster motion for outgoing pages. Shared elements continue using [effects].
+  /// Motion for pages that leave the stack. Same curve as [effects] by default.
   final Motion effectsExit;
 
   /// Motion used to settle interactive drag gestures.
@@ -77,75 +80,36 @@ class TrayMotionTheme {
   /// tray's height.
   final double dragFadeDistance;
 
-  /// Depth of a page change, as the scale of the page behind the current one.
-  /// Going forward, the incoming page grows from this scale to 1 and the
-  /// outgoing page grows past 1 by the same amount, as if the camera moved
-  /// ahead. Going back plays the reverse. Both fade on [effects] and
-  /// [effectsExit], so the depth shares the crossfade's curve. Use 1 to keep a
-  /// plain crossfade.
+  /// Scale of a page while it is hidden, which it grows from as it appears and
+  /// shrinks back to as it leaves. Both directions use the page's progress, so
+  /// the scale shares the fade's curve. Use 1 to keep a plain crossfade.
   final double pageScale;
 
-  /// Matches the original React Native tray: slow spring in, long fixed travel,
-  /// and the same curve for page entry and exit.
-  factory TrayMotionTheme.original() {
+  /// The Expo Dynamic Tray feel, and the default for every tray.
+  ///
+  /// The tray presents on a 240/26 spring from 1000 px below. Its height moves
+  /// on a 185/0.6/15 spring. Page changes fade and scale over 370 ms on one
+  /// ease, from 0.96 to 1 for the entering page and back for the leaving one.
+  factory TrayMotionTheme.expo() {
     return const TrayMotionTheme(
       route: SpringMotion(
         SpringDescription(mass: 1, stiffness: 240, damping: 26),
       ),
-      close: CurvedMotion(Duration(milliseconds: 340), Cubic(0.55, 0, 1, 0.45)),
+      close: CurvedMotion(Duration(milliseconds: 340), _closeCurve),
       geometry: SpringMotion(
         SpringDescription(mass: 0.6, stiffness: 185, damping: 15),
       ),
-      effects: CurvedMotion(
-        Duration(milliseconds: 370),
-        Cubic(0.26, 0.08, 0.25, 1),
-      ),
-      effectsExit: CurvedMotion(
-        Duration(milliseconds: 370),
-        Cubic(0.26, 0.08, 0.25, 1),
-      ),
+      effects: CurvedMotion(Duration(milliseconds: 370), _viewCurve),
+      effectsExit: CurvedMotion(Duration(milliseconds: 370), _viewCurve),
       interactive: SpringMotion(
         SpringDescription(mass: 1, stiffness: 260, damping: 24),
       ),
       travel: TrayTravel.fixed(1000),
-      dragFadeDistance: 1000,
-      pageScale: 1,
-    );
-  }
-
-  /// Faster than [TrayMotionTheme.original]. The travel is measured, so the
-  /// spring is stiffer to cover fewer pixels in the same perceptual window.
-  ///
-  /// Page changes use an ease-out with no overshoot: the depth and crossfade
-  /// move most in their first frames, so the change reads as depth rather
-  /// than a fade, and the height settles just after them.
-  factory TrayMotionTheme.snappy() {
-    return const TrayMotionTheme(
-      route: SpringMotion(
-        SpringDescription(mass: 1, stiffness: 400, damping: 34),
-      ),
-      close: CurvedMotion(Duration(milliseconds: 220), Cubic(0.4, 0, 0.8, 1)),
-      geometry: _pageHeightMotion,
-      effects: _pageDepthMotion,
-      effectsExit: _pageDepthMotion,
-      interactive: SpringMotion(
-        SpringDescription(mass: 1, stiffness: 260, damping: 24),
-      ),
+      pageScale: 0.96,
     );
   }
 }
 
-// Ease-out quad, measured from the reference recording.
-const _pageChangeCurve = Cubic(0.25, 0.46, 0.45, 0.94);
-
-/// Page depth and crossfade.
-const _pageDepthMotion = CurvedMotion(
-  Duration(milliseconds: 140),
-  _pageChangeCurve,
-);
-
-/// Tray height during a page change, a little longer than the depth.
-const _pageHeightMotion = CurvedMotion(
-  Duration(milliseconds: 180),
-  _pageChangeCurve,
-);
+// Expo's VIEW_EASING for page changes and CLOSE_EASING for the close.
+const _viewCurve = Cubic(0.26, 0.08, 0.25, 1);
+const _closeCurve = Cubic(0.55, 0, 1, 0.45);

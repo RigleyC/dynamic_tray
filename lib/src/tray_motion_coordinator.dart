@@ -6,6 +6,7 @@ class _TrayMotionCoordinator extends StatefulWidget {
     required this.controller,
     required this.geometry,
     required this.geometryIsMeasured,
+    required this.transitionReady,
     required this.pages,
     required this.transition,
     required this.geometryMotion,
@@ -27,6 +28,10 @@ class _TrayMotionCoordinator extends StatefulWidget {
   final TrayController controller;
   final TrayGeometry geometry;
   final bool geometryIsMeasured;
+
+  /// Whether the transition may start moving. A transition waits until its
+  /// incoming page and shared elements are measured.
+  final bool transitionReady;
   final List<TrayPage<dynamic>> pages;
   final TrayPageTransition? transition;
   final Motion geometryMotion;
@@ -147,6 +152,9 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       vsync: this,
     );
     widget.controller.backGesture.addListener(_handleBackGesture);
+    // A transition ends only once the height has settled, so a shared element
+    // is never handed over while its destination is still moving.
+    _geometryMotion.addStatusListener((_) => _tryCompletePageTransition());
     _syncPageMotions();
     // Start presentation as soon as the coordinator mounts. The surface is
     // still offscreen while its first intrinsic layout is measured.
@@ -166,6 +174,7 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       widget.pages,
     );
     final transitionChanged = oldWidget.transition?.id != widget.transition?.id;
+    final readyChanged = oldWidget.transitionReady != widget.transitionReady;
     final keyboardChanged = oldWidget.keyboardInset != widget.keyboardInset;
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.backGesture.removeListener(_handleBackGesture);
@@ -200,7 +209,7 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
         _snapGeometry(widget.geometry);
       }
     }
-    if (transitionChanged || pageSequenceChanged) {
+    if (transitionChanged || pageSequenceChanged || readyChanged) {
       _syncPageMotions();
     }
   }
@@ -274,6 +283,11 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       _allMotions = _buildAllMotions();
     }
     _transitionId = widget.transition?.id;
+    // Waits for the incoming page and its shared elements. didUpdateWidget runs
+    // this again once the transition is ready.
+    if (widget.transition != null && !widget.transitionReady) {
+      return;
+    }
     for (final entry in _pageMotions.entries) {
       final target = identical(entry.key, widget.controller.currentPage)
           ? 1.0
@@ -307,6 +321,8 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   void _tryCompletePageTransition() {
     final transitionId = _transitionId;
     if (transitionId != null &&
+        widget.transitionReady &&
+        !_geometryMotion.isAnimating &&
         _pageMotions.values.every((motion) => !motion.isAnimating)) {
       _transitionId = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -342,11 +358,13 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
     _dragMotion.animateTo(0);
   }
 
-  // Dismisses when dragged past 30% of the tray's height, or flung faster than
-  // twice the viewport height per second. These are smooth_sheets' defaults.
+  // Dismisses when dragged past 110 px, or flung faster than 1000 px/s. These
+  // are the Expo Dynamic Tray thresholds.
+  static const _dismissDistance = 110.0;
+  static const _dismissVelocity = 1000.0;
+
   bool _shouldDismiss(double velocityY) =>
-      _dragMotion.value > _geometryMotion.value.rect.height * 0.3 ||
-      velocityY > widget.viewportHeight * 2;
+      _dragMotion.value > _dismissDistance || velocityY > _dismissVelocity;
 
   void settleDrag(double velocityY) {
     if (_shouldDismiss(velocityY)) {
@@ -416,6 +434,13 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
               .toDouble(),
           pageProgresses: pageProgresses,
         );
+        // A settled spring can finish without a status change the listener
+        // sees, so each build checks whether the transition can end.
+        if (widget.transition != null && !_geometryMotion.isAnimating) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _tryCompletePageTransition(),
+          );
+        }
         final content = widget.contentBuilder(context, visualState);
         return widget.builder(context, visualState, content);
       },
