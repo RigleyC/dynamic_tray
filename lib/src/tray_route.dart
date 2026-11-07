@@ -27,7 +27,7 @@ Future<T?> showTray<T>({
   bool useRootNavigator = true,
   TrayGeometryResolver geometryResolver = const DefaultTrayGeometryResolver(),
   TrayMotionTheme? motionTheme,
-  Color barrierColor = const Color.fromRGBO(0, 0, 0, 0.3),
+  Color barrierColor = const Color.fromRGBO(0, 0, 0, 0.4),
   bool barrierDismissible = true,
   Widget? footer,
   WidgetBuilder? footerBuilder,

@@ -427,7 +427,6 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
             0,
             travel * (1 - clampedProgress) + _dragMotion.value - keyboardLift,
           ),
-          surfaceScale: 0.94 + 0.06 * clampedProgress,
           surfaceRadius: geometry.borderRadius,
           backdropOpacity: (clampedProgress * (1 - 0.6 * dragProgress))
               .clamp(0.0, 1.0)
@@ -453,7 +452,6 @@ class _TrayVisualState {
     required this.geometry,
     required this.surfaceRect,
     required this.surfaceOffset,
-    required this.surfaceScale,
     required this.surfaceRadius,
     required this.backdropOpacity,
     required this.pageProgresses,
@@ -467,7 +465,6 @@ class _TrayVisualState {
   /// Per-frame translation applied on top of [surfaceRect].
   final Offset surfaceOffset;
 
-  final double surfaceScale;
   final BorderRadius surfaceRadius;
   final double backdropOpacity;
   final Map<TrayPage<dynamic>, double> pageProgresses;

@@ -78,14 +78,18 @@ and does not rebuild its readers when the tray changes.
   keyboard open, the tray sits 8 px above it. There is no default
   width cap, so the 8 px side gaps hold on every phone; set `maxWidth` on
   the geometry resolver to opt into a centered width limit.
-- Opening starts the presentation spring as soon as the tray mounts, with a
-  0.94-to-1 scale. The first measured content size is applied directly; later
-  content-height changes animate on a `185/0.6/15` spring.
+- Opening starts the presentation spring as soon as the tray mounts. The tray
+  only moves up, with no scale. The first measured content size is applied
+  directly; later content-height changes animate on a `550/41` spring.
 - `TrayMotionTheme.expo()` is the default and matches the Expo Dynamic Tray
-  timings: a `240/26` presentation spring over `TrayTravel.fixed(1000)`, a
-  340 ms close, and a 370 ms ease for page changes. Entering pages grow from
-  0.96 to 1 while they fade in, and leaving pages shrink to 0.96 while they
-  fade out.
+  feel: a `900/54` presentation spring over a measured travel (the tray's
+  height plus a 16 px gap, so it starts fully out of view), and a `900/60`
+  spring for the close, which starts fast and slows down as it settles.
+  Page changes use one ease: the entering page fades in over 245 ms and the
+  leaving page fades out over 170 ms. On a forward change the entering page
+  grows from 0.90 to 1. On a back change the leaving page shrinks toward 0.90.
+  The other page stays at full size.
+- The backdrop is black at 40% opacity by default.
 - Shared elements keep their State across a transition. See the next section.
 - Page widgets and footers are cached per page while the page is in the stack.
   `builder`, `footerBuilder` and `footer` run once, not on every controller

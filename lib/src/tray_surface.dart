@@ -358,10 +358,18 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     }
 
     final progress = opacity.clamp(0.0, 1.0).toDouble();
-    // A page grows from pageScale to 1 as it appears and shrinks back as it
-    // leaves. Both directions read the same progress, so the scale shares the
-    // fade's curve, as the Expo view layer does.
-    final scale = pageScale + (1 - pageScale) * progress;
+    // Direction decides which page scales, and both use the page's progress so
+    // the scale shares the fade's curve. On a forward change only the entering
+    // page grows from pageScale to 1. On a back change only the leaving page
+    // shrinks from 1 to pageScale. Every other page stays at scale 1.
+    final scalingPage = transition == null
+        ? null
+        : transition.isPush
+        ? transition.incoming
+        : transition.outgoing;
+    final scale = identical(pageEntry, scalingPage)
+        ? pageScale + (1 - pageScale) * progress
+        : 1.0;
     final layer = Offstage(
       offstage: !visible,
       child: IgnorePointer(
@@ -688,31 +696,31 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                               rect: visualState.surfaceRect,
                               child: Transform.translate(
                                 offset: visualState.surfaceOffset,
-                                child: Transform.scale(
-                                  scale: visualState.surfaceScale,
-                                  // Keeps the moving surface in its own layer,
-                                  // separate from the barrier.
-                                  child: RepaintBoundary(
-                                    child: DecoratedBox(
-                                      decoration: ShapeDecoration(
-                                        color: surfaceColor,
-                                        shape: RoundedSuperellipseBorder(
-                                          borderRadius: surfaceRadius,
-                                        ),
-                                      ),
-                                      child: ClipRSuperellipse(
+                                // Keeps the moving surface in its own layer,
+                                // separate from the barrier.
+                                child: RepaintBoundary(
+                                  child: DecoratedBox(
+                                    decoration: ShapeDecoration(
+                                      color: surfaceColor,
+                                      shape: RoundedSuperellipseBorder(
                                         borderRadius: surfaceRadius,
-                                        clipBehavior: Clip.antiAlias,
-                                        // Gives Material widgets (TextField,
-                                        // InkWell, ListTile) and text styles a
-                                        // Material ancestor inside the tray.
-                                        child: Material(
-                                          type: MaterialType.transparency,
+                                      ),
+                                    ),
+                                    child: ClipRSuperellipse(
+                                      borderRadius: surfaceRadius,
+                                      clipBehavior: Clip.antiAlias,
+                                      // Gives Material widgets (TextField,
+                                      // InkWell, ListTile) and text styles a
+                                      // Material ancestor inside the tray.
+                                      child: Material(
+                                        type: MaterialType.transparency,
+                                        textStyle: textStyle,
+                                        child: flutter_material.Material(
+                                          type: flutter_material
+                                              .MaterialType
+                                              .transparency,
                                           textStyle: textStyle,
-                                          child: flutter_material.Material(
-                                            type: flutter_material.MaterialType.transparency,
-                                            textStyle: textStyle,
-                                            child: Stack(
+                                          child: Stack(
                                             fit: StackFit.expand,
                                             children: [
                                               Positioned.fill(
@@ -722,14 +730,15 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                                 child: RepaintBoundary(
                                                   child: Stack(
                                                     key: _contentStackKey,
-                                                     children: [
-                                                       content,
-                                                       ..._buildSharedElementFlights(
-                                                         context,
-                                                         transition,
-                                                         visualState.pageProgresses,
-                                                       ),
-                                                     ],
+                                                    children: [
+                                                      content,
+                                                      ..._buildSharedElementFlights(
+                                                        context,
+                                                        transition,
+                                                        visualState
+                                                            .pageProgresses,
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
                                               ),
@@ -787,7 +796,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                                 ),
                                               ),
                                             ],
-                                          ),
                                           ),
                                         ),
                                       ),
