@@ -53,6 +53,11 @@ and does not rebuild its readers when the tray changes.
 
 - Intrinsic pages size the tray to their measured content. If content changes
   after loading, the tray resizes with the reference height spring.
+- `TrayPageLayout.auto` (the default) caps the page at the available height.
+  Content that fits keeps its own height. Taller content stops at the cap and
+  scrolls inside the tray, so a plain `Column` needs no scroll view of its own.
+  A page with its own vertical scroll view, or with `Expanded` or `Spacer`
+  children, fills the cap and owns its scrolling, so scroll views never nest.
 - `TrayPageLayout.bounded` gives scrolling pages a finite viewport that fills
   the available safe height. Use it for a root `ListView` or
   `CustomScrollView`; the page owns its scrolling behavior. While the tray

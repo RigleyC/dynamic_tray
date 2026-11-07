@@ -7,6 +7,7 @@ import 'package:flutter/material.dart' as flutter_material;
 import 'package:flutter/rendering.dart' show RenderBox, RenderProxyBox;
 import 'package:motor/motor.dart';
 
+import 'tray_auto_scroll.dart';
 import 'tray_controller.dart';
 import 'tray_corner_radii.dart';
 import 'tray_geometry.dart';
@@ -323,17 +324,15 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     required TrayPageTransition? transition,
   }) {
     // An auto page is capped at the available height. Content that fits keeps
-    // its height, and a scroll view fills the cap, so the tray sizes to it.
+    // its height, taller content scrolls, and a page with its own scroll view
+    // fills the cap, so the tray sizes to it.
     final isAuto = pageEntry.layout == TrayPageLayout.auto;
     Widget child = SizedBox(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
         child: isAuto
-            ? ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: boundedHeight),
-                child: page,
-              )
+            ? TrayAutoScroll(maxHeight: boundedHeight, child: page)
             : page,
       ),
     );

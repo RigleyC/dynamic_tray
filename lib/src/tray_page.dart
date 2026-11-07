@@ -9,8 +9,12 @@ enum TrayPageLayout {
   ///
   /// The page is measured with the available height as its maximum. Content
   /// that fits keeps its own height, like [TrayPageLayout.intrinsic]. Content
-  /// that does not fit, or a scroll view that fills the space, takes the full
-  /// available height, like [TrayPageLayout.bounded].
+  /// that does not fit takes the full available height and scrolls inside the
+  /// tray, so plain content such as a `Column` needs no scroll view of its own.
+  ///
+  /// A page with its own vertical scroll view, or with flexible children such
+  /// as `Expanded` or `Spacer`, takes the full available height like
+  /// [TrayPageLayout.bounded] and owns its scrolling.
   auto,
 
   /// The page determines its own height from intrinsic content.
