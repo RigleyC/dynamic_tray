@@ -28,31 +28,50 @@ final class FixedTrayTravel extends TrayTravel {
 }
 
 class TrayMotionTheme {
+  /// The Expo Dynamic Tray feel unless a field is overridden.
+  ///
+  /// The tray presents on a 900/54 spring over a measured travel, so it starts
+  /// just below the viewport and clears it. It closes on a 900/60 spring that
+  /// starts fast and decelerates. The tray does not scale while it opens or
+  /// closes, it only moves. Its height moves on a 550/41 spring.
+  ///
+  /// Page changes use one ease. The entering page fades in over 245 ms and
+  /// the leaving page fades out over 170 ms. On a forward change the entering
+  /// page grows from 0.90 to 1. On a back change the leaving page shrinks
+  /// toward 0.90.
   const TrayMotionTheme({
-    required this.route,
+    this.route = const SpringMotion(
+      SpringDescription(mass: 1, stiffness: 900, damping: 54),
+    ),
     this.close = const SpringMotion(
       SpringDescription(mass: 1, stiffness: 900, damping: 60),
     ),
-    required this.geometry,
-    required this.effects,
+    this.geometry = const SpringMotion(
+      SpringDescription(mass: 1, stiffness: 550, damping: 41),
+    ),
+    this.effects = const CurvedMotion(Duration(milliseconds: 245), _viewCurve),
     this.effectsExit = const CurvedMotion(
       Duration(milliseconds: 170),
       _viewCurve,
     ),
-    required this.interactive,
+    this.interactive = const SpringMotion(
+      SpringDescription(mass: 1, stiffness: 260, damping: 24),
+    ),
     this.travel = const TrayTravel.measured(),
     this.dragFadeDistance = 240.0,
     this.pageScale = 0.90,
   });
+
+  /// The Expo Dynamic Tray feel, and the default for every tray.
+  const factory TrayMotionTheme.expo() = TrayMotionTheme;
 
   /// Motor motion for the tray's presentation spring when opening.
   final Motion route;
 
   /// Motor motion for the tray's close.
   ///
-  /// A spring that starts fast and decelerates into the hidden position. It
-  /// runs over [travel], so the tray leaves the viewport on the same path it
-  /// entered.
+  /// It runs over [travel], so the tray leaves the viewport on the same path
+  /// it entered.
   final Motion close;
 
   /// Motor motion for changes to the tray's bounds and corner radius.
@@ -92,38 +111,6 @@ class TrayMotionTheme {
   /// keeps scale 1, and every page scales around its center. Use 1 to keep a
   /// plain crossfade.
   final double pageScale;
-
-  /// The Expo Dynamic Tray feel, and the default for every tray.
-  ///
-  /// The tray presents on a 900/54 spring over a measured travel, so it starts
-  /// just below the viewport and clears it. It closes on a 900/60 spring that
-  /// starts fast and decelerates. The tray does not scale while it opens or
-  /// closes, it only moves. Its height moves on a 550/41 spring.
-  ///
-  /// Page changes use one ease. The entering page fades in over 245 ms and
-  /// the leaving page fades out over 170 ms. On a forward change the entering
-  /// page grows from 0.90 to 1. On a back change the leaving page shrinks
-  /// toward 0.90.
-  factory TrayMotionTheme.expo() {
-    return const TrayMotionTheme(
-      route: SpringMotion(
-        SpringDescription(mass: 1, stiffness: 900, damping: 54),
-      ),
-      close: SpringMotion(
-        SpringDescription(mass: 1, stiffness: 900, damping: 60),
-      ),
-      geometry: SpringMotion(
-        SpringDescription(mass: 1, stiffness: 550, damping: 41),
-      ),
-      effects: CurvedMotion(Duration(milliseconds: 245), _viewCurve),
-      effectsExit: CurvedMotion(Duration(milliseconds: 170), _viewCurve),
-      interactive: SpringMotion(
-        SpringDescription(mass: 1, stiffness: 260, damping: 24),
-      ),
-      travel: TrayTravel.measured(),
-      pageScale: 0.90,
-    );
-  }
 }
 
 // Expo's VIEW_EASING for page changes.

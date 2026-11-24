@@ -86,8 +86,8 @@ and does not rebuild its readers when the tray changes.
 - Opening starts the presentation spring as soon as the tray mounts. The tray
   only moves up, with no scale. The first measured content size is applied
   directly; later content-height changes animate on a `550/41` spring.
-- `TrayMotionTheme.expo()` is the default and matches the Expo Dynamic Tray
-  feel: a `900/54` presentation spring over a measured travel (the tray's
+- `TrayMotionTheme()` (also `TrayMotionTheme.expo()`) is the default and
+  matches the Expo Dynamic Tray feel: a `900/54` presentation spring over a measured travel (the tray's
   height plus a 16 px gap, so it starts fully out of view), and a `900/60`
   spring for the close, which starts fast and slows down as it settles.
   Page changes use one ease: the entering page fades in over 245 ms and the
@@ -113,13 +113,17 @@ and does not rebuild its readers when the tray changes.
 - One visual state keeps bounds, radius, scale, backdrop, keyboard/drag offset,
   and page progress synchronized. Motor drives the state through independent
   channels so each transition keeps the reference's spring or timing profile.
-  `TrayMotionTheme.expo()` (default) matches the reference timings. Customize
-  any field to change the feel.
+  The default `TrayMotionTheme()` matches the reference timings. Override any
+  field to change the feel.
   Per-frame travel, drag, and keyboard offsets are applied as a transform, so
   the stack lays out the tray at its resting bounds and never relayouts while it
   animates. The backdrop folds its progress into the barrier alpha instead of
-  compositing a full-screen layer, and page content sits behind a
-  `RepaintBoundary` so moving the tray does not repaint it.
+  compositing a full-screen layer. Each page sits behind its own
+  `RepaintBoundary`, so moving the tray, changing its height, or fading and
+  scaling a page during a page change does not repaint page content.
+- A page change starts in the same frame its incoming page is first laid out.
+  Navigation requested while a page fades waits for that fade (about 245 ms),
+  not for the height spring.
 
 `TrayHeader` is an optional neutral layout helper; the package does not impose
 Material or Cupertino widgets, app colors, or typography on page content.
@@ -153,8 +157,10 @@ TraySharedElement.target(tag: 'counter', width: 160, height: 56)
   still growing.
 - A transition does not start until the incoming page and its targets have been
   measured, so no frame shows the element missing.
-- A transition ends only after the tray's height has settled. The flight hands
-  the content over at the live destination, so there is no jump at the end.
+- A transition ends when the page fade ends, even if the tray's height is still
+  moving. The flight reads its destination on every frame, so it hands the
+  content over without a jump, and the next navigation does not wait for the
+  height spring.
 - An element without a destination on the incoming page falls back to the page
   transition: its content leaves with its page.
 - A `TraySharedElement` with a `child` and no matching target on another page

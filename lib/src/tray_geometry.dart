@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 import 'package:motor/motor.dart';
 
@@ -92,6 +94,10 @@ class TrayLayoutContext {
 }
 
 abstract interface class TrayGeometryResolver {
+  /// The tray's resting bounds for content of [contentSize], chrome included.
+  ///
+  /// The tray also asks with an infinite height to learn the tallest bounds it
+  /// can take, so the result must cap the height.
   TrayGeometry resolve(TrayLayoutContext context, Size contentSize);
 }
 
@@ -119,53 +125,41 @@ class DefaultTrayGeometryResolver implements TrayGeometryResolver {
 
   @override
   TrayGeometry resolve(TrayLayoutContext context, Size contentSize) {
-    final safeTop = context.padding.top;
-    // The motion coordinator applies the keyboard translation. Reserve that
-    // space here so the tray stays on screen while keeping its resting
-    // position a fixed distance from the viewport edge.
-    final keyboardInset = context.viewInsets.bottom
-        .clamp(0.0, double.infinity)
-        .toDouble();
-    final bottomGap = bottomMargin;
-    final availableHeight =
-        (context.size.height - safeTop - bottomGap - keyboardInset).clamp(
-          0.0,
-          context.size.height,
-        );
-    final availableWidth = (context.size.width - horizontalMargin * 2).clamp(
+    // The motion coordinator lifts the tray above the keyboard with a
+    // transform, so the keyboard only shrinks the height here.
+    final keyboardInset = math.max(0.0, context.viewInsets.bottom);
+    final availableHeight = math.max(
       0.0,
-      context.size.width,
+      context.size.height - context.padding.top - bottomMargin - keyboardInset,
     );
-    final width = availableWidth.clamp(0.0, maxWidth).toDouble();
-
-    final naturalHeight = contentSize.height.clamp(0.0, availableHeight);
-    final height = naturalHeight;
-    final safeHeight = height == 0 ? 1.0 : height;
-    final restsAtDisplayEdge = keyboardInset == 0;
+    final width = math.max(
+      0.0,
+      math.min(context.size.width - horizontalMargin * 2, maxWidth),
+    );
+    final height = math.max(1.0, math.min(contentSize.height, availableHeight));
     final displayCorners =
         context.displayCornerRadii ?? BorderRadius.circular(radius);
 
-    Radius insetFromDisplay(Radius radius) => Radius.elliptical(
-      (radius.x - horizontalMargin).clamp(0.0, double.infinity).toDouble(),
-      (radius.y - bottomMargin).clamp(0.0, double.infinity).toDouble(),
-    );
+    // Concentric with the display while the tray rests at its edge.
+    Radius bottomCorner(Radius display) => keyboardInset > 0
+        ? Radius.circular(radius)
+        : Radius.elliptical(
+            math.max(0.0, display.x - horizontalMargin),
+            math.max(0.0, display.y - bottomMargin),
+          );
 
     return TrayGeometry(
       rect: Rect.fromLTWH(
         (context.size.width - width) / 2,
-        context.size.height - bottomGap - safeHeight,
+        context.size.height - bottomMargin - height,
         width,
-        safeHeight,
+        height,
       ),
       borderRadius: BorderRadius.only(
         topLeft: Radius.circular(radius),
         topRight: Radius.circular(radius),
-        bottomRight: restsAtDisplayEdge
-            ? insetFromDisplay(displayCorners.bottomRight)
-            : Radius.circular(radius),
-        bottomLeft: restsAtDisplayEdge
-            ? insetFromDisplay(displayCorners.bottomLeft)
-            : Radius.circular(radius),
+        bottomRight: bottomCorner(displayCorners.bottomRight),
+        bottomLeft: bottomCorner(displayCorners.bottomLeft),
       ),
     );
   }

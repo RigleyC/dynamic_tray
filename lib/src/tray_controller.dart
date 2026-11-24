@@ -7,10 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'tray_page.dart';
 
 class TrayController extends ChangeNotifier {
-  TrayController({
-    required TrayPage<dynamic> initialPage,
-    TrayPageRestorer? pageRestorer,
-  }) : _pageRestorer = pageRestorer {
+  TrayController({required TrayPage<dynamic> initialPage, this._pageRestorer}) {
     _validatePage(initialPage);
     _entries.add(_TrayEntry<dynamic>(initialPage));
     _visitedPages.add(initialPage);
@@ -380,9 +377,6 @@ class TrayController extends ChangeNotifier {
       _setLifecycle(TrayLifecycle.open);
     }
   }
-
-  @internal
-  void markClosing() => _setLifecycle(TrayLifecycle.closing);
 
   @internal
   void markClosed() => _setLifecycle(TrayLifecycle.closed);

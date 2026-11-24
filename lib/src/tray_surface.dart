@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 // material_ui ships its own Material. Flutter's TextField, Checkbox and other
@@ -48,25 +49,38 @@ class TraySurface extends StatefulWidget {
   State<TraySurface> createState() => _TraySurfaceState();
 }
 
+/// Space the tray reserves around page content.
+abstract final class _TrayChrome {
+  /// The handle area above the page.
+  static const double top = 36;
+  static const double bottom = 24;
+  static const double horizontal = 24;
+
+  /// Fixed space for the footer, independent of its real height.
+  static const double footer = 65;
+
+  static double height({required bool hasFooter}) =>
+      top + bottom + (hasFooter ? footer : 0);
+}
+
 class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
-  Size _contentSize = Size.zero;
+  // The last size the current page reported. A page that has not been laid out
+  // yet sizes the tray with it, so the tray does not collapse while it builds.
+  Size _lastMeasuredSize = Size.zero;
   final Map<TrayPage<dynamic>, Size> _contentSizes = {};
-  // Built once per page and reused on every rebuild. Rebuilds happen on each
-  // controller notify and on each MediaQuery change, such as the keyboard, and
-  // the builders must not run again for those.
+  // Built once per page. The tray rebuilds on each controller change and on
+  // each MediaQuery change, such as the keyboard, and the page builders must
+  // not run again for those.
   final Map<TrayPage<dynamic>, Widget> _pageWidgets = {};
   final Map<TrayPage<dynamic>, Widget?> _footers = {};
   bool _hasInitialMeasurement = false;
-
-  /// Fixed space reserved for the footer, independent of its real height.
-  static const double _footerReserve = 65;
-  bool _isDragging = false;
   double _dragTranslation = 0;
+  bool _isDragging = false;
   bool _contentDragActive = false;
   double _contentDragTranslation = 0;
-  // Marks the stack that holds the pages and the shared-element flights. Its
-  // coordinates ignore the surface's own offset, scale and drag, so flights
-  // measured here move with the tray.
+  // The stack that holds the pages and the shared-element flights. Its
+  // coordinates ignore the surface's offset and drag, so flights measured here
+  // move with the tray.
   final GlobalKey _contentStackKey = GlobalKey();
   final TraySharedElementRegistry _sharedElementRegistry =
       TraySharedElementRegistry();
@@ -85,9 +99,8 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     super.initState();
     widget.controller.addListener(_handleControllerChanged);
     // Safety net for apps that did not call warmUpTrayDeviceCorners during
-    // startup. Deliberately not awaited and never followed by a setState: the
-    // value is read synchronously on each build, so a tray opened before it
-    // resolves keeps the MediaQuery corners instead of rebuilding mid-flight.
+    // startup. Never followed by a setState: a tray opened before it resolves
+    // keeps the MediaQuery corners instead of rebuilding mid-flight.
     unawaited(warmUpTrayDeviceCorners());
   }
 
@@ -121,7 +134,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     _contentSizes.removeWhere((page, _) => !retainedPages.contains(page));
     _pageWidgets.removeWhere((page, _) => !retainedPages.contains(page));
     _footers.removeWhere((page, _) => !retainedPages.contains(page));
-    _sharedElementRegistry.retainPages(retainedPages);
     if (transition != null) {
       // Runs before any frame moves the outgoing page, so its rect is at rest.
       _sharedElementRegistry.beginTransition(transition);
@@ -164,119 +176,57 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     return Rect.fromPoints(topLeft, bottomRight);
   }
 
-  TrayGeometry _geometryForContentSize(
-    TrayPage<dynamic> page,
-    Size size,
-    TrayLayoutContext layoutContext,
-    double activeFooterHeight,
-  ) {
-    const innerBottomPadding = 24.0;
-    final viewportBottomGap = layoutContext.viewInsets.bottom + 8.0;
-    final boundedFallbackHeight =
-        (layoutContext.size.height -
-                layoutContext.padding.top -
-                viewportBottomGap -
-                activeFooterHeight -
-                36 -
-                innerBottomPadding)
-            .clamp(0.0, layoutContext.size.height)
-            .toDouble();
-    final measuredContentSize = page.layout == TrayPageLayout.bounded
-        ? Size(size.width, boundedFallbackHeight)
-        : size;
-    return widget.geometryResolver.resolve(
-      layoutContext,
-      Size(
-        measuredContentSize.width,
-        measuredContentSize.height +
-            activeFooterHeight +
-            36 +
-            innerBottomPadding,
-      ),
-    );
-  }
-
-  void _updateContentSize(
+  /// Runs during layout, each time the current page reports a new size.
+  void _handlePageLaidOut(
     TrayPage<dynamic> page,
     Size size,
     TrayGeometry geometry,
   ) {
-    if (!mounted) {
+    if (!mounted || !identical(widget.controller.currentPage, page)) {
       return;
     }
-    final isCurrentPage = identical(widget.controller.currentPage, page);
-    final isOutgoingPage = identical(
-      widget.controller.transition?.outgoing,
-      page,
-    );
-    if (!isCurrentPage && !isOutgoingPage) {
-      return;
-    }
-    if (isCurrentPage) {
-      // Lets a transition to this page start, now that its elements exist.
-      _sharedElementRegistry.pageLaidOut(page);
-    }
-    final isInitialMeasurement = isCurrentPage && !_hasInitialMeasurement;
-    final updatesFallbackSize =
-        (isCurrentPage || isOutgoingPage) && _contentSize != size;
+    final coordinator = _visualMotionKey.currentState;
+    coordinator?.pageLaidOut(page);
     final previousSize = _contentSizes[page];
-    if (previousSize == size && !isInitialMeasurement && !updatesFallbackSize) {
-      return;
-    }
-    // A bounded page's height comes from the viewport, not from its content,
-    // and build already derives that same height for the geometry. Reporting
-    // a height-only change would only repeat the geometry build computed (and
-    // would run during layout on every keyboard frame), so only the initial
-    // measurement or a width change (rotation, split view) is reported.
-    final isBoundedHeightOnlyChange =
-        page.layout == TrayPageLayout.bounded &&
-        !isInitialMeasurement &&
-        previousSize?.width == size.width;
     _contentSizes[page] = size;
-    if (isCurrentPage) {
-      _contentSize = size;
+    _lastMeasuredSize = size;
+    final isFirstMeasurement = !_hasInitialMeasurement;
+    _hasInitialMeasurement = true;
+    // A bounded page's height comes from the viewport, and build already
+    // derives the geometry from it. Only its width changes the tray.
+    final changesGeometry = page.layout == TrayPageLayout.bounded
+        ? previousSize?.width != size.width
+        : previousSize != size;
+    if (isFirstMeasurement || changesGeometry) {
+      coordinator?.reportMeasuredGeometry(
+        geometry,
+        firstMeasurement: isFirstMeasurement,
+      );
     }
-    if (isBoundedHeightOnlyChange) {
-      return;
-    }
-    if (isInitialMeasurement) _hasInitialMeasurement = true;
-    _visualMotionKey.currentState?.reportMeasuredGeometry(
-      geometry,
-      firstMeasurement: isInitialMeasurement,
-    );
   }
 
   void _startDrag(DragStartDetails details) {
+    _isDragging = true;
     _dragTranslation = 0;
     _visualMotionKey.currentState?.beginDrag();
-    setState(() {
-      _isDragging = true;
-    });
   }
 
   void _updateDrag(DragUpdateDetails details) {
-    if (!_isDragging) {
-      return;
-    }
+    if (!_isDragging) return;
     _dragTranslation += details.primaryDelta ?? 0;
     _visualMotionKey.currentState?.dragTo(_dragTranslation);
   }
 
   void _cancelDrag() {
-    if (!_isDragging) {
-      return;
-    }
-    setState(() => _isDragging = false);
+    if (!_isDragging) return;
+    _isDragging = false;
     _visualMotionKey.currentState?.cancelDrag();
   }
 
-  void _settleDrag([double velocity = 0]) {
-    if (!_isDragging) {
-      return;
-    }
-
-    setState(() => _isDragging = false);
-    _visualMotionKey.currentState?.settleDrag(velocity);
+  void _settleDrag(DragEndDetails details) {
+    if (!_isDragging) return;
+    _isDragging = false;
+    _visualMotionKey.currentState?.settleDrag(details.primaryVelocity ?? 0);
   }
 
   // A list at its top keeps the extra pull as overscroll. That pull drags the
@@ -308,31 +258,24 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   }
 
   Widget _buildPageLayer({
-    required BuildContext context,
     required Widget page,
     required TrayPage<dynamic> pageEntry,
     required double width,
     required double height,
-    required double boundedHeight,
-    required bool measure,
-    required TrayGeometry Function(Size) geometryForSize,
-    required bool visible,
-    required bool interactive,
+    required double maxHeight,
     required bool current,
-    required double opacity,
+    required bool visible,
+    required double progress,
     required double pageScale,
     required TrayPageTransition? transition,
+    required ValueChanged<Size> onLaidOut,
   }) {
-    // An auto page is capped at the available height. Content that fits keeps
-    // its height, taller content scrolls, and a page with its own scroll view
-    // fills the cap, so the tray sizes to it.
-    final isAuto = pageEntry.layout == TrayPageLayout.auto;
     Widget child = SizedBox(
       width: width,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: isAuto
-            ? TrayAutoScroll(maxHeight: boundedHeight, child: page)
+        padding: const EdgeInsets.symmetric(horizontal: _TrayChrome.horizontal),
+        child: pageEntry.layout == TrayPageLayout.auto
+            ? TrayAutoScroll(maxHeight: maxHeight, child: page)
             : page,
       ),
     );
@@ -345,105 +288,53 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
       child: child,
     );
     child = TraySizeObserver(
-      enabled: measure,
-      deferCallback: false,
-      onSizeChanged: (size) =>
-          _updateContentSize(pageEntry, size, geometryForSize(size)),
-      child: child,
+      enabled: current,
+      onSizeChanged: onLaidOut,
+      // The fade and scale below change on every frame of a page change. The
+      // boundary keeps them from repainting the page itself.
+      child: RepaintBoundary(child: child),
     );
     final isBounded = pageEntry.layout == TrayPageLayout.bounded;
     if (!isBounded) {
       child = Align(alignment: Alignment.topCenter, child: child);
     }
 
-    final progress = opacity.clamp(0.0, 1.0).toDouble();
-    // Direction decides which page scales, and both use the page's progress so
-    // the scale shares the fade's curve. On a forward change only the entering
-    // page grows from pageScale to 1. On a back change only the leaving page
-    // shrinks from 1 to pageScale. Every other page stays at scale 1.
-    final scalingPage = transition == null
-        ? null
-        : transition.isPush
-        ? transition.incoming
-        : transition.outgoing;
+    // On a forward change only the entering page grows from pageScale to 1.
+    // On a back change only the leaving page shrinks from 1 to pageScale.
+    final scalingPage = switch (transition) {
+      null => null,
+      TrayPageTransition(isPush: true, :final incoming) => incoming,
+      TrayPageTransition(:final outgoing) => outgoing,
+    };
     final scale = identical(pageEntry, scalingPage)
         ? pageScale + (1 - pageScale) * progress
         : 1.0;
-    final layer = Offstage(
-      offstage: !visible,
-      child: IgnorePointer(
-        ignoring: !interactive,
-        child: Opacity(
-          opacity: progress,
-          child: Transform.scale(scale: scale, child: child),
-        ),
-      ),
-    );
     // Hidden pages stop their tickers. Bounded and hidden pages also take a
     // fixed size, so the animating surface height does not relayout them on
     // every frame. The surface clips the layer while it animates.
-    final gatedLayer = TickerMode(enabled: visible, child: layer);
+    final layer = TickerMode(
+      enabled: visible,
+      child: Offstage(
+        offstage: !visible,
+        child: IgnorePointer(
+          ignoring: !current,
+          child: Opacity(
+            opacity: progress,
+            child: Transform.scale(scale: scale, child: child),
+          ),
+        ),
+      ),
+    );
     if (isBounded || !visible) {
       return Positioned(
         left: 0,
         top: 0,
         width: width,
         height: height,
-        child: gatedLayer,
+        child: layer,
       );
     }
-    return Positioned(left: 0, right: 0, top: 0, child: gatedLayer);
-  }
-
-  Widget _buildContent({
-    required BuildContext context,
-    required double width,
-    required List<TrayPage<dynamic>> pages,
-    required List<Widget> pageWidgets,
-    required int currentIndex,
-    required TrayPageTransition? transition,
-    required Map<TrayPage<dynamic>, double> pageProgresses,
-    required double restingHeight,
-    required double boundedHeight,
-    required double pageScale,
-    required TrayGeometry Function(TrayPage<dynamic>, Size) geometryForSize,
-  }) {
-    final outgoingIndex = transition == null
-        ? -1
-        : pages.indexOf(transition.outgoing);
-    final layers = <Widget>[];
-    for (var index = 0; index < pageWidgets.length; index++) {
-      final page = pages[index];
-      final isCurrent = index == currentIndex;
-      final isOutgoing = index == outgoingIndex;
-      final progress = (pageProgresses[page] ?? 0).clamp(0.0, 1.0).toDouble();
-      final visible = isCurrent || isOutgoing || progress > 0;
-      layers.add(
-        _buildPageLayer(
-          context: context,
-          page: pageWidgets[index],
-          pageEntry: page,
-          width: width,
-          height: page.layout == TrayPageLayout.bounded
-              ? boundedHeight
-              : restingHeight,
-          measure: isCurrent,
-          boundedHeight: boundedHeight,
-          geometryForSize: (size) => geometryForSize(page, size),
-          visible: visible,
-          interactive: isCurrent,
-          current: isCurrent,
-          opacity: progress,
-          pageScale: pageScale,
-          transition: transition,
-        ),
-      );
-    }
-
-    return NotificationListener<ScrollNotification>(
-      onNotification: _handleContentScroll,
-      child: Stack(fit: StackFit.expand, children: layers),
-    );
+    return Positioned(left: 0, right: 0, top: 0, child: layer);
   }
 
   Widget _pageWidgetFor(BuildContext context, TrayPage<dynamic> page) {
@@ -468,10 +359,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   }
 
   void _handleBarrierTap() {
-    if (!widget.barrierDismissible) {
-      return;
+    if (widget.barrierDismissible) {
+      widget.controller.close();
     }
-    widget.controller.close();
   }
 
   // Flights share the incoming page's progress, so they land with the page
@@ -491,9 +381,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     return [
       for (final match in _sharedElementRegistry.matches(transition))
         _TraySharedElementFlight(
-          key: ValueKey<Object>(
-            _TraySharedElementFlightKey(transition.id, match.tag),
-          ),
+          key: ValueKey<(int, Object)>((transition.id, match.tag)),
           from: match.outgoingRect,
           to: match.incomingRect,
           progress: progress,
@@ -515,56 +403,50 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
       builder: (context, _) {
         return LayoutBuilder(
           builder: (context, constraints) {
-            // Read only the aspects the tray depends on. MediaQuery.of listens
-            // to every aspect, so a text scale or accessibility change would
-            // rebuild the tray and every page builder it holds.
-            final mediaQueryPadding = MediaQuery.paddingOf(context);
+            // MediaQuery.of listens to every aspect, so a text scale change
+            // would rebuild the tray. Read only the aspects it uses.
             final viewInsets = MediaQuery.viewInsetsOf(context);
-            final currentPage = widget.controller.currentPage;
-            final footer = _footerFor(context, currentPage);
-            final activeFooterHeight = footer == null ? 0.0 : _footerReserve;
-            // Theme lookups run once per surface build. The motion coordinator
-            // calls the builder on every frame, so per-frame lookups would
-            // repeat the same work.
-            final surfaceColor =
-                widget.surfaceColor ?? traySurfaceColorOf(context);
-            final textStyle = trayTextStyleOf(context);
-            const innerBottomPadding = 24.0;
-            final viewportBottomGap = viewInsets.bottom + 8.0;
             final layoutContext = TrayLayoutContext(
               size: constraints.biggest,
-              padding: mediaQueryPadding,
+              padding: MediaQuery.paddingOf(context),
               viewInsets: viewInsets,
               displayCornerRadii:
                   trayDeviceCornerRadii ??
                   MediaQuery.displayCornerRadiiOf(context),
             );
-            final boundedFallbackHeight =
-                (layoutContext.size.height -
-                        mediaQueryPadding.top -
-                        viewportBottomGap -
-                        activeFooterHeight -
-                        36 -
-                        innerBottomPadding)
-                    .clamp(0.0, layoutContext.size.height)
-                    .toDouble();
-            final measuredContentSize =
-                currentPage.layout == TrayPageLayout.bounded
-                ? Size(
-                    _contentSizes[currentPage]?.width ?? _contentSize.width,
-                    boundedFallbackHeight,
-                  )
-                : _contentSizes[currentPage] ?? _contentSize;
-            final contentSize = Size(
-              measuredContentSize.width,
-              measuredContentSize.height +
-                  activeFooterHeight +
-                  36 +
-                  innerBottomPadding,
+            final currentPage = widget.controller.currentPage;
+            final footer = _footerFor(context, currentPage);
+            final chromeHeight = _TrayChrome.height(hasFooter: footer != null);
+            // The tallest content the tray can hold. A bounded page always
+            // takes it, and an auto page scrolls past it.
+            final maxContentHeight = math.max(
+              0.0,
+              widget.geometryResolver
+                      .resolve(layoutContext, const Size(0, double.infinity))
+                      .rect
+                      .height -
+                  chromeHeight,
             );
-            final geometry = widget.geometryResolver.resolve(
-              layoutContext,
-              contentSize,
+            TrayGeometry geometryFor(TrayPage<dynamic> page, Size size) =>
+                widget.geometryResolver.resolve(
+                  layoutContext,
+                  Size(
+                    size.width,
+                    (page.layout == TrayPageLayout.bounded
+                            ? maxContentHeight
+                            : size.height) +
+                        chromeHeight,
+                  ),
+                );
+            final geometry = geometryFor(
+              currentPage,
+              _contentSizes[currentPage] ?? _lastMeasuredSize,
+            );
+            // Hidden intrinsic pages are laid out at the resting content
+            // height, so they do not follow the animation.
+            final restingHeight = math.max(
+              0.0,
+              geometry.rect.height - chromeHeight,
             );
             final transition = widget.controller.transition;
             final pages = [
@@ -576,264 +458,233 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
             final pageWidgets = [
               for (final page in pages) _pageWidgetFor(context, page),
             ];
-            // The tray's resting content height for the active page. Hidden
-            // intrinsic pages are laid out at this height so they do not follow
-            // the animation.
-            final restingHeight =
-                (geometry.rect.height -
-                        activeFooterHeight -
-                        36 -
-                        innerBottomPadding)
-                    .clamp(0.0, geometry.rect.height)
-                    .toDouble();
+            // Theme lookups run once per surface build, not once per frame.
+            final surfaceColor =
+                widget.surfaceColor ?? traySurfaceColorOf(context);
+            final textStyle = trayTextStyleOf(context);
 
             return ListenableBuilder(
               listenable: _sharedElementRegistry,
-              builder: (context, _) {
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _TrayMotionCoordinator(
-                      key: _visualMotionKey,
-                      controller: widget.controller,
-                      geometry: geometry,
-                      geometryIsMeasured: _contentSizes.containsKey(
-                        currentPage,
-                      ),
-                      pages: pages,
-                      transition: transition,
-                      // The page motion waits until the incoming page and its
-                      // shared elements are measured, so no frame shows a gap.
-                      transitionReady:
-                          transition == null ||
-                          _sharedElementRegistry.isReady(transition),
-                      geometryMotion: widget.motionTheme.geometry,
-                      effectsMotion: widget.motionTheme.effects,
-                      effectsExitMotion: widget.motionTheme.effectsExit,
-                      routeMotion: widget.motionTheme.route,
-                      closeMotion: widget.motionTheme.close,
-                      interactiveMotion: widget.motionTheme.interactive,
-                      dragFadeDistance: widget.motionTheme.dragFadeDistance,
-                      travel: widget.motionTheme.travel,
-                      viewportHeight: layoutContext.size.height,
-                      keyboardInset: viewInsets.bottom
-                          .clamp(0.0, double.infinity)
-                          .toDouble(),
-                      closing:
-                          widget.controller.lifecycle == TrayLifecycle.closing,
-                      onTransitionSettled:
-                          widget.controller.completePageTransition,
-                      contentBuilder: (context, visualState) {
-                        final rect = visualState.geometry.rect;
-                        return Positioned.fill(
-                          top: 36,
-                          bottom: footer == null
-                              ? innerBottomPadding
-                              : activeFooterHeight + innerBottomPadding,
-                          child: _buildContent(
-                            context: context,
-                            width: rect.width,
-                            pages: pages,
-                            pageWidgets: pageWidgets,
-                            currentIndex: pages.indexOf(currentPage),
+              builder: (context, _) => _TrayMotionCoordinator(
+                key: _visualMotionKey,
+                controller: widget.controller,
+                motionTheme: widget.motionTheme,
+                geometry: geometry,
+                geometryIsMeasured: _contentSizes.containsKey(currentPage),
+                pages: pages,
+                transition: transition,
+                viewportHeight: layoutContext.size.height,
+                keyboardInset: math.max(0.0, viewInsets.bottom),
+                closing: widget.controller.lifecycle == TrayLifecycle.closing,
+                onTransitionSettled: widget.controller.completePageTransition,
+                contentBuilder: (context, visualState) => Positioned.fill(
+                  top: _TrayChrome.top,
+                  bottom: chromeHeight - _TrayChrome.top,
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _handleContentScroll,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        for (var index = 0; index < pages.length; index++)
+                          _buildPageLayerFor(
+                            pages[index],
+                            pageWidgets[index],
+                            currentPage: currentPage,
                             transition: transition,
-                            pageProgresses: visualState.pageProgresses,
+                            visualState: visualState,
                             restingHeight: restingHeight,
-                            // Bounded pages keep this height for the whole
-                            // motion. It is the height a bounded page has as the
-                            // current page, whatever page is shown now, so the
-                            // surface reveals it instead of relaying it out.
-                            boundedHeight: boundedFallbackHeight,
-                            pageScale: widget.motionTheme.pageScale,
-                            geometryForSize: (page, size) =>
-                                _geometryForContentSize(
-                                  page,
-                                  size,
-                                  layoutContext,
-                                  footer == null ? 0.0 : _footerReserve,
-                                ),
+                            maxContentHeight: maxContentHeight,
+                            geometryFor: geometryFor,
                           ),
-                        );
-                      },
-                      builder: (context, visualState, content) {
-                        final surfaceRadius = visualState.surfaceRadius;
-                        return Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Positioned.fill(
-                              child: Semantics(
-                                label: widget.barrierDismissible
-                                    ? 'Dismiss'
-                                    : 'Modal barrier',
-                                button: widget.barrierDismissible,
-                                onTap: widget.barrierDismissible
-                                    ? _handleBarrierTap
-                                    : null,
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: widget.barrierDismissible
-                                      ? _handleBarrierTap
-                                      : () {},
-                                  // Fold the presentation progress into the
-                                  // barrier alpha. An Opacity here would composite
-                                  // a full-screen layer on every animated frame.
-                                  child: ColoredBox(
-                                    color: widget.barrierColor.withValues(
-                                      alpha:
-                                          widget.barrierColor.a *
-                                          visualState.backdropOpacity,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Positioned.fromRect(
-                              // Layout uses the resting bounds only. The
-                              // per-frame travel, drag and keyboard offsets go
-                              // through a transform so the stack never relayouts
-                              // while the tray animates.
-                              rect: visualState.surfaceRect,
-                              child: Transform.translate(
-                                offset: visualState.surfaceOffset,
-                                // Keeps the moving surface in its own layer,
-                                // separate from the barrier.
-                                child: RepaintBoundary(
-                                  child: DecoratedBox(
-                                    decoration: ShapeDecoration(
-                                      color: surfaceColor,
-                                      shape: RoundedSuperellipseBorder(
-                                        borderRadius: surfaceRadius,
-                                      ),
-                                    ),
-                                    child: ClipRSuperellipse(
-                                      borderRadius: surfaceRadius,
-                                      clipBehavior: Clip.antiAlias,
-                                      // Gives Material widgets (TextField,
-                                      // InkWell, ListTile) and text styles a
-                                      // Material ancestor inside the tray.
-                                      child: Material(
-                                        type: MaterialType.transparency,
-                                        textStyle: textStyle,
-                                        child: flutter_material.Material(
-                                          type: flutter_material
-                                              .MaterialType
-                                              .transparency,
-                                          textStyle: textStyle,
-                                          child: Stack(
-                                            fit: StackFit.expand,
-                                            children: [
-                                              Positioned.fill(
-                                                // Isolates the pages from the
-                                                // surface transform, so moving
-                                                // the tray does not repaint them.
-                                                child: RepaintBoundary(
-                                                  child: Stack(
-                                                    key: _contentStackKey,
-                                                    children: [
-                                                      content,
-                                                      ..._buildSharedElementFlights(
-                                                        context,
-                                                        transition,
-                                                        visualState
-                                                            .pageProgresses,
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ),
-                                              if (footer != null)
-                                                Positioned(
-                                                  bottom: innerBottomPadding,
-                                                  left: 24,
-                                                  right: 24,
-                                                  child: footer,
-                                                ),
-                                              Positioned(
-                                                top: 8,
-                                                left: 0,
-                                                right: 0,
-                                                height: 28,
-                                                // The drag is the only way to
-                                                // close from the handle, so
-                                                // expose a dismiss action for
-                                                // assistive tech.
-                                                child: Semantics(
-                                                  label: 'Close',
-                                                  button: true,
-                                                  onTap:
-                                                      widget.controller.close,
-                                                  onDismiss:
-                                                      widget.controller.close,
-                                                  child: GestureDetector(
-                                                    behavior:
-                                                        HitTestBehavior.opaque,
-                                                    onVerticalDragStart:
-                                                        _startDrag,
-                                                    onVerticalDragUpdate:
-                                                        _updateDrag,
-                                                    onVerticalDragEnd:
-                                                        (
-                                                          details,
-                                                        ) => _settleDrag(
-                                                          details.primaryVelocity ??
-                                                              0,
-                                                        ),
-                                                    onVerticalDragCancel:
-                                                        _cancelDrag,
-                                                    child: const Align(
-                                                      alignment:
-                                                          Alignment.topCenter,
-                                                      child: Padding(
-                                                        padding:
-                                                            EdgeInsets.only(
-                                                              top: 8,
-                                                            ),
-                                                        child: TrayHandle(),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
+                      ],
                     ),
-                  ],
-                );
-              },
+                  ),
+                ),
+                builder: (context, visualState, content) => _buildSurface(
+                  context,
+                  visualState: visualState,
+                  content: content,
+                  transition: transition,
+                  footer: footer,
+                  surfaceColor: surfaceColor,
+                  textStyle: textStyle,
+                ),
+              ),
             );
           },
         );
       },
     );
   }
+
+  Widget _buildPageLayerFor(
+    TrayPage<dynamic> page,
+    Widget pageWidget, {
+    required TrayPage<dynamic> currentPage,
+    required TrayPageTransition? transition,
+    required _TrayVisualState visualState,
+    required double restingHeight,
+    required double maxContentHeight,
+    required TrayGeometry Function(TrayPage<dynamic>, Size) geometryFor,
+  }) {
+    final current = identical(page, currentPage);
+    final progress = (visualState.pageProgresses[page] ?? 0)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    return _buildPageLayer(
+      page: pageWidget,
+      pageEntry: page,
+      width: visualState.geometry.rect.width,
+      height: page.layout == TrayPageLayout.bounded
+          ? maxContentHeight
+          : restingHeight,
+      maxHeight: maxContentHeight,
+      current: current,
+      visible: current || identical(page, transition?.outgoing) || progress > 0,
+      progress: progress,
+      pageScale: widget.motionTheme.pageScale,
+      transition: transition,
+      onLaidOut: (size) =>
+          _handlePageLaidOut(page, size, geometryFor(page, size)),
+    );
+  }
+
+  Widget _buildSurface(
+    BuildContext context, {
+    required _TrayVisualState visualState,
+    required Widget content,
+    required TrayPageTransition? transition,
+    required Widget? footer,
+    required Color surfaceColor,
+    required TextStyle? textStyle,
+  }) {
+    final radius = visualState.geometry.borderRadius;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned.fill(
+          child: Semantics(
+            label: widget.barrierDismissible ? 'Dismiss' : 'Modal barrier',
+            button: widget.barrierDismissible,
+            onTap: widget.barrierDismissible ? _handleBarrierTap : null,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _handleBarrierTap,
+              // The progress goes into the barrier alpha. An Opacity here
+              // would composite a full-screen layer on every animated frame.
+              child: ColoredBox(
+                color: widget.barrierColor.withValues(
+                  alpha: widget.barrierColor.a * visualState.backdropOpacity,
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned.fromRect(
+          rect: visualState.geometry.rect,
+          // Travel, drag and keyboard offsets go through a transform, so they
+          // never relayout the tray.
+          child: Transform.translate(
+            offset: visualState.surfaceOffset,
+            child: RepaintBoundary(
+              child: DecoratedBox(
+                decoration: ShapeDecoration(
+                  color: surfaceColor,
+                  shape: RoundedSuperellipseBorder(borderRadius: radius),
+                ),
+                child: ClipRSuperellipse(
+                  borderRadius: radius,
+                  clipBehavior: Clip.antiAlias,
+                  child: Material(
+                    type: MaterialType.transparency,
+                    textStyle: textStyle,
+                    child: flutter_material.Material(
+                      type: flutter_material.MaterialType.transparency,
+                      textStyle: textStyle,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Positioned.fill(
+                            // Moving the tray does not repaint the pages.
+                            child: RepaintBoundary(
+                              child: Stack(
+                                key: _contentStackKey,
+                                children: [
+                                  content,
+                                  ..._buildSharedElementFlights(
+                                    context,
+                                    transition,
+                                    visualState.pageProgresses,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (footer != null)
+                            Positioned(
+                              bottom: _TrayChrome.bottom,
+                              left: _TrayChrome.horizontal,
+                              right: _TrayChrome.horizontal,
+                              child: footer,
+                            ),
+                          Positioned(
+                            top: 8,
+                            left: 0,
+                            right: 0,
+                            height: 28,
+                            // The drag is the only way to close from the
+                            // handle, so assistive tech gets a dismiss action.
+                            child: Semantics(
+                              label: 'Close',
+                              button: true,
+                              onTap: widget.controller.close,
+                              onDismiss: widget.controller.close,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onVerticalDragStart: _startDrag,
+                                onVerticalDragUpdate: _updateDrag,
+                                onVerticalDragEnd: _settleDrag,
+                                onVerticalDragCancel: _cancelDrag,
+                                child: const Align(
+                                  alignment: Alignment.topCenter,
+                                  child: Padding(
+                                    padding: EdgeInsets.only(top: 8),
+                                    child: TrayHandle(),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
+/// Reports its child's size during layout while [enabled], each time the size
+/// changes and once more when it becomes enabled.
 class TraySizeObserver extends SingleChildRenderObjectWidget {
   const TraySizeObserver({
     super.key,
     required this.enabled,
     required this.onSizeChanged,
-    this.deferCallback = true,
     super.child,
   });
 
   final bool enabled;
   final ValueChanged<Size> onSizeChanged;
-  final bool deferCallback;
 
   @override
   RenderObject createRenderObject(BuildContext context) {
-    return RenderTraySizeObserver(enabled, onSizeChanged, deferCallback);
+    return RenderTraySizeObserver(enabled, onSizeChanged);
   }
 
   @override
@@ -841,49 +692,35 @@ class TraySizeObserver extends SingleChildRenderObjectWidget {
     BuildContext context,
     covariant RenderTraySizeObserver renderObject,
   ) {
-    final wasEnabled = renderObject.enabled;
-    renderObject.enabled = enabled;
-    renderObject.onSizeChanged = onSizeChanged;
-    renderObject.deferCallback = deferCallback;
-    if (!wasEnabled && enabled) {
-      renderObject.resetReportedSize();
-    }
+    renderObject
+      ..enabled = enabled
+      ..onSizeChanged = onSizeChanged;
   }
 }
 
 class RenderTraySizeObserver extends RenderProxyBox {
-  RenderTraySizeObserver(this.enabled, this.onSizeChanged, this.deferCallback);
+  RenderTraySizeObserver(this._enabled, this.onSizeChanged);
 
-  bool enabled;
   ValueChanged<Size> onSizeChanged;
-  bool deferCallback;
-  Size? _lastSize;
+  Size? _reportedSize;
 
-  void reportSize() {
-    if (!deferCallback) {
-      if (attached && enabled && hasSize) onSizeChanged(size);
-      return;
+  bool get enabled => _enabled;
+  bool _enabled;
+  set enabled(bool value) {
+    if (value == _enabled) return;
+    _enabled = value;
+    if (value) {
+      _reportedSize = null;
+      markNeedsLayout();
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (attached && enabled) {
-        onSizeChanged(size);
-      }
-    });
-  }
-
-  void resetReportedSize() {
-    _lastSize = null;
-    markNeedsLayout();
   }
 
   @override
   void performLayout() {
     super.performLayout();
-    if (!enabled || _lastSize == size) {
-      return;
-    }
-    _lastSize = size;
-    reportSize();
+    if (!enabled || _reportedSize == size) return;
+    _reportedSize = size;
+    onSizeChanged(size);
   }
 }
 
@@ -909,21 +746,4 @@ class _TraySharedElementFlight extends StatelessWidget {
       child: IgnorePointer(child: child),
     );
   }
-}
-
-class _TraySharedElementFlightKey {
-  const _TraySharedElementFlightKey(this.transitionId, this.tag);
-
-  final int transitionId;
-  final Object tag;
-
-  @override
-  bool operator ==(Object other) {
-    return other is _TraySharedElementFlightKey &&
-        other.transitionId == transitionId &&
-        other.tag == tag;
-  }
-
-  @override
-  int get hashCode => Object.hash(transitionId, tag);
 }

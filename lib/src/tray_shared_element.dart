@@ -97,11 +97,7 @@ class _TraySharedElementState extends State<TraySharedElement> {
         );
       },
       onDetached: () {
-        registry.unregister(
-          page: scope.page,
-          tag: widget.tag,
-          marker: _marker,
-        );
+        registry.unregister(page: scope.page, tag: widget.tag, marker: _marker);
       },
       child: ListenableBuilder(
         listenable: registry,
@@ -151,9 +147,6 @@ class _TraySharedElementState extends State<TraySharedElement> {
 class TraySharedElementRegistry extends ChangeNotifier {
   final Map<TrayPage<dynamic>, Map<Object, List<_TraySharedElementRecord>>>
   _records = {};
-  // Pages whose content has been laid out. A transition waits for the incoming
-  // page before it starts, so its destinations exist when the flight begins.
-  final Set<TrayPage<dynamic>> _laidOutPages = {};
   // One key per tag. The live content keeps its element when it moves between
   // the owner, the flight and the destination, so its State survives.
   final Map<Object, GlobalKey> _contentKeys = {};
@@ -260,44 +253,6 @@ class TraySharedElementRegistry extends ChangeNotifier {
     _scheduleNotify();
   }
 
-  /// Marks [page] as laid out, which lets a transition to it start.
-  void pageLaidOut(TrayPage<dynamic> page) {
-    if (!_disposed && _laidOutPages.add(page)) {
-      _scheduleNotify();
-    }
-  }
-
-  /// Drops the layout state of pages that left the stack.
-  void retainPages(Set<TrayPage<dynamic>> pages) {
-    _laidOutPages.removeWhere((page) => !pages.contains(page));
-  }
-
-  /// Whether [transition] can start: its incoming page is laid out and every
-  /// shared element it shares with the outgoing page has a measured rect.
-  bool isReady(TrayPageTransition transition) {
-    if (_disposed) {
-      return false;
-    }
-    beginTransition(transition);
-    if (!_laidOutPages.contains(transition.incoming)) {
-      return false;
-    }
-    final outgoing = _records[transition.outgoing];
-    final incoming = _records[transition.incoming];
-    if (outgoing == null || incoming == null) {
-      return true;
-    }
-    for (final tag in outgoing.keys) {
-      final incomingRecords = incoming[tag];
-      if (incomingRecords != null &&
-          incomingRecords.isNotEmpty &&
-          incomingRecords.first.rect == null) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   /// Whether the element [marker] on [page] renders the live content now.
   ///
   /// At rest, the current page's first element shows it. During a transition
@@ -379,7 +334,8 @@ class TraySharedElementRegistry extends ChangeNotifier {
       }
       // The live content comes from the outgoing element, or from the most
       // recent owner when the outgoing element is a destination.
-      final content = outgoingRecords.first.child ?? _contentChildren[entry.key];
+      final content =
+          outgoingRecords.first.child ?? _contentChildren[entry.key];
       final incomingRecord = entry.value.first;
       final incomingRect = incomingRecord.rect ?? _lastIncomingRects[entry.key];
       if (content == null || incomingRect == null) {
@@ -417,7 +373,6 @@ class TraySharedElementRegistry extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _records.clear();
-    _laidOutPages.clear();
     _outgoingRects.clear();
     _lastIncomingRects.clear();
     super.dispose();
@@ -453,18 +408,16 @@ class TraySharedElementMatch {
 }
 
 @internal
-class TraySharedElementScope
-    extends InheritedNotifier<TraySharedElementRegistry> {
+class TraySharedElementScope extends InheritedWidget {
   const TraySharedElementScope({
     super.key,
-    required TraySharedElementRegistry registry,
+    required this.registry,
     required this.page,
     required this.current,
     required this.transition,
     required this.toLocalRect,
     required super.child,
-  }) : registry = registry,
-       super(notifier: registry);
+  });
 
   final TraySharedElementRegistry registry;
   final TrayPage<dynamic> page;
@@ -478,7 +431,8 @@ class TraySharedElementScope
 
   @override
   bool updateShouldNotify(covariant TraySharedElementScope oldWidget) {
-    return page != oldWidget.page ||
+    return registry != oldWidget.registry ||
+        page != oldWidget.page ||
         current != oldWidget.current ||
         transition?.id != oldWidget.transition?.id ||
         toLocalRect != oldWidget.toLocalRect;
@@ -508,9 +462,8 @@ class _TraySharedElementRecord {
 
   /// Current bounds in the tray's content space. Read at the time of the call,
   /// so the transforms of the page are included while the surface stays out.
-  Rect? get rect => renderBox.attached && renderBox.hasSize
-      ? measure(renderBox)
-      : null;
+  Rect? get rect =>
+      renderBox.attached && renderBox.hasSize ? measure(renderBox) : null;
 
   @override
   bool operator ==(Object other) {

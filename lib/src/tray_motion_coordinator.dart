@@ -4,19 +4,11 @@ class _TrayMotionCoordinator extends StatefulWidget {
   const _TrayMotionCoordinator({
     super.key,
     required this.controller,
+    required this.motionTheme,
     required this.geometry,
     required this.geometryIsMeasured,
-    required this.transitionReady,
     required this.pages,
     required this.transition,
-    required this.geometryMotion,
-    required this.effectsMotion,
-    required this.effectsExitMotion,
-    required this.routeMotion,
-    required this.closeMotion,
-    required this.interactiveMotion,
-    required this.dragFadeDistance,
-    required this.travel,
     required this.viewportHeight,
     required this.keyboardInset,
     required this.closing,
@@ -26,25 +18,11 @@ class _TrayMotionCoordinator extends StatefulWidget {
   });
 
   final TrayController controller;
+  final TrayMotionTheme motionTheme;
   final TrayGeometry geometry;
   final bool geometryIsMeasured;
-
-  /// Whether the transition may start moving. A transition waits until its
-  /// incoming page and shared elements are measured.
-  final bool transitionReady;
   final List<TrayPage<dynamic>> pages;
   final TrayPageTransition? transition;
-  final Motion geometryMotion;
-  final Motion effectsMotion;
-  final Motion effectsExitMotion;
-  final Motion routeMotion;
-  final Motion closeMotion;
-  final Motion interactiveMotion;
-
-  /// Drag distance over which the backdrop fades out.
-  final double dragFadeDistance;
-
-  final TrayTravel travel;
 
   /// Height of the route viewport the tray is laid out in.
   final double viewportHeight;
@@ -66,98 +44,47 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   late final SingleMotionController _dragMotion;
   final Map<TrayPage<dynamic>, SingleMotionController> _pageMotions = {};
   final Map<TrayPage<dynamic>, double> _pageTargets = {};
-  int? _transitionId;
+  // Merged once per change of _pageMotions, so the AnimatedBuilder keeps one
+  // listenable across frames.
+  late Listenable _allMotions;
+
+  // A page change starts once its incoming page is laid out, and settles once
+  // the page motions end.
+  int? _startedTransitionId;
+  int? _settledTransitionId;
   bool _dismissCompleted = false;
 
   double _dragOrigin = 0;
   bool _receivedFirstMeasurement = false;
-  bool _firstGeometrySnapScheduled = false;
   TrayGeometry? _pendingFirstGeometry;
-  // Last geometry the motion was sent to (animated or snapped). Comparing
-  // against it stops repeated reports of the same target from restarting the
-  // curve, which would otherwise reset its near-flat start on every frame.
+  // Last geometry the motion was sent to. Repeated reports of the same target
+  // must not restart the spring.
   TrayGeometry? _geometryTarget;
 
-  void _animateGeometryTo(TrayGeometry geometry) {
-    _geometryTarget = geometry;
-    _geometryMotion.motion = widget.geometryMotion;
-    _geometryMotion.animateTo(geometry);
-  }
-
-  void _snapGeometry(TrayGeometry geometry) {
-    _geometryTarget = geometry;
-    _geometryMotion.value = geometry;
-  }
-
-  void reportMeasuredGeometry(
-    TrayGeometry geometry, {
-    required bool firstMeasurement,
-  }) {
-    if (!mounted || widget.closing) return;
-    if (firstMeasurement ||
-        !_receivedFirstMeasurement ||
-        _firstGeometrySnapScheduled) {
-      _receivedFirstMeasurement = true;
-      _pendingFirstGeometry = geometry;
-      if (!_firstGeometrySnapScheduled) {
-        _firstGeometrySnapScheduled = true;
-        // Content and footer observers can report in either order during this
-        // layout. Apply the latest combined geometry after all layout callbacks.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _firstGeometrySnapScheduled = false;
-          final pendingGeometry = _pendingFirstGeometry;
-          _pendingFirstGeometry = null;
-          if (mounted && !widget.closing && pendingGeometry != null) {
-            _snapGeometry(pendingGeometry);
-          }
-        });
-      }
-      return;
-    }
-    _receivedFirstMeasurement = true;
-    if (geometry != _geometryTarget) {
-      _animateGeometryTo(geometry);
-    }
-  }
-
-  // Rebuilt only when the page motion keys change, in _syncPageMotions, so the
-  // AnimatedBuilder keeps one listenable across frames.
-  late Listenable _allMotions;
-
-  Listenable _buildAllMotions() => Listenable.merge([
-    _geometryMotion,
-    _presentationMotion,
-    _dragMotion,
-    ..._pageMotions.values,
-  ]);
+  TrayMotionTheme get _motion => widget.motionTheme;
 
   @override
   void initState() {
     super.initState();
-    _transitionId = widget.transition?.id;
     _geometryMotion = MotionController<TrayGeometry>(
-      motion: widget.geometryMotion,
+      motion: _motion.geometry,
       vsync: this,
       converter: const TrayGeometryMotionConverter(),
       initialValue: widget.geometry,
     );
     _geometryTarget = widget.geometry;
     _presentationMotion = SingleMotionController(
-      motion: widget.routeMotion,
+      motion: _motion.route,
       vsync: this,
       initialValue: 0,
     )..addStatusListener(_handlePresentationStatus);
     _dragMotion = SingleMotionController(
-      motion: widget.interactiveMotion,
+      motion: _motion.interactive,
       vsync: this,
     );
     widget.controller.backGesture.addListener(_handleBackGesture);
-    // A transition ends only once the height has settled, so a shared element
-    // is never handed over while its destination is still moving.
-    _geometryMotion.addStatusListener((_) => _tryCompletePageTransition());
     _syncPageMotions();
-    // Start presentation as soon as the coordinator mounts. The surface is
-    // still offscreen while its first intrinsic layout is measured.
+    // The surface is still out of view while its first layout is measured.
     if (!widget.closing) {
       _presentationMotion.animateTo(1);
     } else {
@@ -168,50 +95,112 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   @override
   void didUpdateWidget(covariant _TrayMotionCoordinator oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final geometryChanged = oldWidget.geometry != widget.geometry;
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.backGesture.removeListener(_handleBackGesture);
+      widget.controller.backGesture.addListener(_handleBackGesture);
+    }
+    if (!oldWidget.closing && widget.closing) {
+      if (_presentationMotion.value <= 0.001) {
+        _completeDismissAfterFrame();
+      } else {
+        _presentationMotion.motion = _motion.close;
+        _presentationMotion.animateTo(0);
+      }
+      return;
+    }
+    // A close can begin before the first measurement arrives. That late
+    // measurement must not reopen the tray.
+    if (widget.closing) {
+      return;
+    }
     final pageSequenceChanged = !_samePageSequence(
       oldWidget.pages,
       widget.pages,
     );
     final transitionChanged = oldWidget.transition?.id != widget.transition?.id;
-    final readyChanged = oldWidget.transitionReady != widget.transitionReady;
-    final keyboardChanged = oldWidget.keyboardInset != widget.keyboardInset;
-    if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.backGesture.removeListener(_handleBackGesture);
-      widget.controller.backGesture.addListener(_handleBackGesture);
-    }
-    final closingStarted = !oldWidget.closing && widget.closing;
-    if (closingStarted) {
-      if (_presentationMotion.value <= 0.001) {
-        _completeDismissAfterFrame();
-      } else {
-        _presentationMotion.motion = widget.closeMotion;
-        _presentationMotion.animateTo(0);
-      }
-      return;
-    }
-    // A close can begin before the first layout measurement arrives. Ignore
-    // that late measurement for presentation so it cannot reopen the tray.
-    if (widget.closing) {
-      return;
-    }
-    // The keyboard animates on the system side and the tray follows it each
-    // frame through viewInsets. Animating the geometry as well would make the
-    // tray lag behind the keyboard, so a keyboard-only change snaps.
-    final keyboardOnlyChange =
-        keyboardChanged && !transitionChanged && !pageSequenceChanged;
-    if (geometryChanged &&
+    if (widget.geometry != oldWidget.geometry &&
         widget.geometry != _geometryTarget &&
         (!pageSequenceChanged || widget.geometryIsMeasured)) {
+      // The keyboard animates on the system side and the tray follows it on
+      // each frame, so a keyboard-only change snaps instead of lagging behind.
+      final keyboardOnlyChange =
+          oldWidget.keyboardInset != widget.keyboardInset &&
+          !transitionChanged &&
+          !pageSequenceChanged;
       if (_receivedFirstMeasurement && !keyboardOnlyChange) {
         _animateGeometryTo(widget.geometry);
       } else {
         _snapGeometry(widget.geometry);
       }
     }
-    if (transitionChanged || pageSequenceChanged || readyChanged) {
+    if (transitionChanged || pageSequenceChanged) {
       _syncPageMotions();
     }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.backGesture.removeListener(_handleBackGesture);
+    _geometryMotion.dispose();
+    _presentationMotion.dispose();
+    _dragMotion.dispose();
+    for (final motion in _pageMotions.values) {
+      motion.dispose();
+    }
+    super.dispose();
+  }
+
+  void _animateGeometryTo(TrayGeometry geometry) {
+    _geometryTarget = geometry;
+    _geometryMotion.motion = _motion.geometry;
+    _geometryMotion.animateTo(geometry);
+  }
+
+  void _snapGeometry(TrayGeometry geometry) {
+    _geometryTarget = geometry;
+    _geometryMotion.value = geometry;
+  }
+
+  /// Runs during layout when the current page reports a new size.
+  void reportMeasuredGeometry(
+    TrayGeometry geometry, {
+    required bool firstMeasurement,
+  }) {
+    if (!mounted || widget.closing) return;
+    if (firstMeasurement || _pendingFirstGeometry != null) {
+      // The tray is still out of view, so the first size snaps. Setting the
+      // value notifies listeners, which must not happen during layout.
+      final scheduled = _pendingFirstGeometry != null;
+      _pendingFirstGeometry = geometry;
+      if (scheduled) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final pending = _pendingFirstGeometry;
+        _pendingFirstGeometry = null;
+        _receivedFirstMeasurement = true;
+        if (mounted && !widget.closing && pending != null) {
+          _snapGeometry(pending);
+        }
+      });
+      return;
+    }
+    if (geometry != _geometryTarget) {
+      _animateGeometryTo(geometry);
+    }
+  }
+
+  /// Runs during layout when [page] is current and reports its size. A page
+  /// change waits for this, so its incoming page and shared elements exist.
+  /// Starting the motion here, in the same frame, keeps the first frame of the
+  /// change from being an idle one.
+  void pageLaidOut(TrayPage<dynamic> page) {
+    final transition = widget.transition;
+    if (transition == null ||
+        !identical(transition.incoming, page) ||
+        _startedTransitionId == transition.id) {
+      return;
+    }
+    _startedTransitionId = transition.id;
+    _syncPageMotions();
   }
 
   bool _samePageSequence(
@@ -227,17 +216,13 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   }
 
   void _handlePresentationStatus(AnimationStatus status) {
-    final reachedZero =
-        status == AnimationStatus.dismissed &&
-        _presentationMotion.value <= 0.001;
-    if ((status != AnimationStatus.completed && !reachedZero) || !mounted) {
-      return;
-    }
-    if (widget.closing && _presentationMotion.value <= 0.001) {
+    // Motor reports a return to 0 as completed when 0 was not the initial
+    // value, so the value decides which end was reached.
+    if (!mounted || status.isAnimating) return;
+    final value = _presentationMotion.value;
+    if (widget.closing && value <= 0.001) {
       _completeDismissAfterFrame();
-      return;
-    }
-    if (_presentationMotion.value >= 0.999) {
+    } else if (value >= 0.999) {
       widget.controller.markOpen();
     }
   }
@@ -251,9 +236,10 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   }
 
   void _syncPageMotions() {
+    final transition = widget.transition;
     final retainedPages = <TrayPage<dynamic>>{
       ...widget.pages,
-      if (widget.transition != null) widget.transition!.outgoing,
+      ?transition?.outgoing,
     };
     var keysChanged = false;
     for (final page in retainedPages) {
@@ -261,13 +247,12 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       keysChanged = true;
       _pageTargets[page] = 0;
       _pageMotions[page] = SingleMotionController(
-        motion: widget.effectsMotion,
+        motion: _motion.effects,
         vsync: this,
-        // The first page is already present when the tray opens. The Expo
-        // package only applies this crossfade to subsequent view changes.
+        // The first page is already present when the tray opens. Only later
+        // page changes fade.
         initialValue:
-            widget.transition == null &&
-                identical(page, widget.controller.currentPage)
+            transition == null && identical(page, widget.controller.currentPage)
             ? 1
             : 0,
       )..addStatusListener(_handlePageMotionStatus);
@@ -280,55 +265,50 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       }
     }
     if (keysChanged) {
-      _allMotions = _buildAllMotions();
+      _allMotions = Listenable.merge([
+        _geometryMotion,
+        _presentationMotion,
+        _dragMotion,
+        ..._pageMotions.values,
+      ]);
     }
-    _transitionId = widget.transition?.id;
-    // Waits for the incoming page and its shared elements. didUpdateWidget runs
-    // this again once the transition is ready.
-    if (widget.transition != null && !widget.transitionReady) {
+    if (transition != null && _startedTransitionId != transition.id) {
       return;
     }
-    for (final entry in _pageMotions.entries) {
-      final target = identical(entry.key, widget.controller.currentPage)
-          ? 1.0
-          : 0.0;
-      if (_pageTargets[entry.key] == target) {
+    for (final MapEntry(key: page, value: motion) in _pageMotions.entries) {
+      final target = identical(page, widget.controller.currentPage) ? 1.0 : 0.0;
+      if (_pageTargets[page] == target) continue;
+      _pageTargets[page] = target;
+      if ((motion.value - target).abs() < 0.001 && !motion.isAnimating) {
         continue;
       }
-      _pageTargets[entry.key] = target;
-      if ((entry.value.value - target).abs() < 0.001 &&
-          !entry.value.isAnimating) {
-        continue;
-      }
-      final motion = target == 1
-          ? widget.effectsMotion
-          : widget.effectsExitMotion;
-      if (entry.value.motion != motion) {
-        entry.value.motion = motion;
-      }
-      entry.value.animateTo(target);
+      motion.motion = target == 1 ? _motion.effects : _motion.effectsExit;
+      motion.animateTo(target);
     }
-    _tryCompletePageTransition();
+    _trySettleTransition();
   }
 
   void _handlePageMotionStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed ||
-        status == AnimationStatus.dismissed) {
-      _tryCompletePageTransition();
-    }
+    if (!status.isAnimating) _trySettleTransition();
   }
 
-  void _tryCompletePageTransition() {
-    final transitionId = _transitionId;
-    if (transitionId != null &&
-        widget.transitionReady &&
-        !_geometryMotion.isAnimating &&
-        _pageMotions.values.every((motion) => !motion.isAnimating)) {
-      _transitionId = null;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) widget.onTransitionSettled(transitionId);
-      });
+  // The height may still be moving. Shared-element flights read their
+  // destination live in the same content space, so they hand over without a
+  // jump, and the next navigation does not wait for the height spring.
+  void _trySettleTransition() {
+    final transitionId = widget.transition?.id;
+    if (transitionId == null ||
+        _startedTransitionId != transitionId ||
+        _settledTransitionId == transitionId ||
+        _pageMotions.values.any((motion) => motion.isAnimating)) {
+      return;
     }
+    _settledTransitionId = transitionId;
+    // Status listeners and layout callbacks run mid-frame; the controller
+    // notifies its listeners, so it waits for the frame to end.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onTransitionSettled(transitionId);
+    });
   }
 
   void beginDrag() {
@@ -337,15 +317,12 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   }
 
   void dragTo(double translationY) {
-    _dragMotion.value = (_dragOrigin + translationY)
-        .clamp(0.0, double.infinity)
-        .toDouble();
+    _dragMotion.value = math.max(0.0, _dragOrigin + translationY);
   }
 
-  // The back gesture moves the tray with the same drag offset as a handle drag.
+  // The back gesture moves the tray with the same offset as a handle drag.
   // Commit closes or pops it; cancel springs it back. A commit that closes the
-  // tray keeps the offset, so the close animation continues from where the
-  // gesture left off.
+  // tray keeps the offset, so the close continues from where the gesture left.
   void _handleBackGesture() {
     final progress = widget.controller.backGesture.value;
     if (progress != null) {
@@ -354,42 +331,25 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       return;
     }
     if (widget.controller.lifecycle == TrayLifecycle.closing) return;
-    _dragMotion.motion = widget.interactiveMotion;
-    _dragMotion.animateTo(0);
+    cancelDrag();
   }
 
-  // Dismisses when dragged past 110 px, or flung faster than 1000 px/s. These
-  // are the Expo Dynamic Tray thresholds.
+  // The Expo Dynamic Tray thresholds.
   static const _dismissDistance = 110.0;
   static const _dismissVelocity = 1000.0;
 
-  bool _shouldDismiss(double velocityY) =>
-      _dragMotion.value > _dismissDistance || velocityY > _dismissVelocity;
-
   void settleDrag(double velocityY) {
-    if (_shouldDismiss(velocityY)) {
+    if (_dragMotion.value > _dismissDistance || velocityY > _dismissVelocity) {
       widget.controller.dismiss();
       return;
     }
-    _dragMotion.motion = widget.interactiveMotion;
+    _dragMotion.motion = _motion.interactive;
     _dragMotion.animateTo(0, withVelocity: velocityY);
   }
 
   void cancelDrag() {
-    _dragMotion.motion = widget.interactiveMotion;
+    _dragMotion.motion = _motion.interactive;
     _dragMotion.animateTo(0);
-  }
-
-  @override
-  void dispose() {
-    widget.controller.backGesture.removeListener(_handleBackGesture);
-    _geometryMotion.dispose();
-    _presentationMotion.dispose();
-    _dragMotion.dispose();
-    for (final motion in _pageMotions.values) {
-      motion.dispose();
-    }
-    super.dispose();
   }
 
   @override
@@ -398,48 +358,40 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       animation: _allMotions,
       builder: (context, _) {
         final geometry = _geometryMotion.value;
-        final routeProgress = _presentationMotion.value;
-        final clampedProgress = routeProgress.clamp(0.0, 1.0).toDouble();
-        final travel = switch (widget.travel) {
+        final presentation = _presentationMotion.value.clamp(0.0, 1.0);
+        final travel = switch (_motion.travel) {
           FixedTrayTravel(:final distance) => distance,
           // Clears the viewport and no more, so no frame of the spring is
           // spent below the visible area.
-          MeasuredTrayTravel(:final hiddenGap) =>
-            (widget.viewportHeight +
-                    hiddenGap -
-                    geometry.rect.top +
-                    widget.keyboardInset)
-                .clamp(0.0, double.infinity)
-                .toDouble(),
+          MeasuredTrayTravel(:final hiddenGap) => math.max(
+            0.0,
+            widget.viewportHeight +
+                hiddenGap -
+                geometry.rect.top +
+                widget.keyboardInset,
+          ),
         };
-        final dragProgress = widget.dragFadeDistance <= 0
+        final dragFade = _motion.dragFadeDistance <= 0
             ? 0.0
-            : (_dragMotion.value / widget.dragFadeDistance).clamp(0.0, 1.0);
-        final keyboardLift = widget.keyboardInset;
-        final pageProgresses = <TrayPage<dynamic>, double>{
-          for (final entry in _pageMotions.entries)
-            entry.key: entry.value.value,
-        };
+            : (_dragMotion.value / _motion.dragFadeDistance).clamp(0.0, 1.0);
         final visualState = _TrayVisualState(
           geometry: geometry,
-          surfaceRect: geometry.rect,
           surfaceOffset: Offset(
             0,
-            travel * (1 - clampedProgress) + _dragMotion.value - keyboardLift,
+            travel * (1 - presentation) +
+                _dragMotion.value -
+                widget.keyboardInset,
           ),
-          surfaceRadius: geometry.borderRadius,
-          backdropOpacity: (clampedProgress * (1 - 0.6 * dragProgress))
-              .clamp(0.0, 1.0)
-              .toDouble(),
-          pageProgresses: pageProgresses,
+          backdropOpacity: (presentation * (1 - 0.6 * dragFade)).clamp(
+            0.0,
+            1.0,
+          ),
+          pageProgresses: {
+            for (final MapEntry(key: page, value: motion)
+                in _pageMotions.entries)
+              page: motion.value,
+          },
         );
-        // A settled spring can finish without a status change the listener
-        // sees, so each build checks whether the transition can end.
-        if (widget.transition != null && !_geometryMotion.isAnimating) {
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _tryCompletePageTransition(),
-          );
-        }
         final content = widget.contentBuilder(context, visualState);
         return widget.builder(context, visualState, content);
       },
@@ -450,22 +402,17 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
 class _TrayVisualState {
   const _TrayVisualState({
     required this.geometry,
-    required this.surfaceRect,
     required this.surfaceOffset,
-    required this.surfaceRadius,
     required this.backdropOpacity,
     required this.pageProgresses,
   });
 
+  /// Resting bounds and corners of the surface.
   final TrayGeometry geometry;
 
-  /// Resting bounds of the surface. Stable while the tray animates.
-  final Rect surfaceRect;
-
-  /// Per-frame translation applied on top of [surfaceRect].
+  /// Per-frame translation applied on top of [geometry].
   final Offset surfaceOffset;
 
-  final BorderRadius surfaceRadius;
   final double backdropOpacity;
   final Map<TrayPage<dynamic>, double> pageProgresses;
 }

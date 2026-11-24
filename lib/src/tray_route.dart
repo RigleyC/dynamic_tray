@@ -26,7 +26,7 @@ Future<T?> showTray<T>({
   required TrayPage<T> page,
   bool useRootNavigator = true,
   TrayGeometryResolver geometryResolver = const DefaultTrayGeometryResolver(),
-  TrayMotionTheme? motionTheme,
+  TrayMotionTheme motionTheme = const TrayMotionTheme(),
   Color barrierColor = const Color.fromRGBO(0, 0, 0, 0.4),
   bool barrierDismissible = true,
   Widget? footer,
@@ -44,7 +44,7 @@ Future<T?> showTray<T>({
     TrayRoute<T>(
       trayController: controller,
       geometryResolver: geometryResolver,
-      motionTheme: motionTheme ?? TrayMotionTheme.expo(),
+      motionTheme: motionTheme,
       barrierColor: barrierColor,
       barrierDismissible: barrierDismissible,
       footer: footer,
@@ -81,14 +81,13 @@ class TrayRoute<T> extends PopupRoute<T> {
     required this.trayController,
     required this.geometryResolver,
     required this.motionTheme,
-    required Color barrierColor,
-    required bool barrierDismissible,
+    required this._barrierColor,
+    required this._barrierDismissible,
     this.footer,
     this.footerBuilder,
     this.surfaceColor,
     this.restorationId,
-  }) : _barrierColor = barrierColor,
-       _barrierDismissible = barrierDismissible;
+  });
 
   final TrayController trayController;
   final TrayGeometryResolver geometryResolver;

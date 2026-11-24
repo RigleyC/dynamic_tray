@@ -40,20 +40,14 @@ void main() {
     expect(geometry.rect, const Rect.fromLTWH(8, 552, 344, 240));
   });
 
-  test('long measured content fills the available height', () {
+  test('long content is capped at the safe available height', () {
     final geometry = resolver.resolve(layout, const Size(320, 900));
 
     // The bottom gap is the fixed 8 px margin. The system bottom padding is not
     // added, so the tray stays at its fixed distance from the viewport edge.
     expect(geometry.rect.height, 768);
-    expect(geometry.rect.bottom, 792);
-  });
-
-  test('long content is capped at the safe available height', () {
-    final geometry = resolver.resolve(layout, const Size(320, 900));
-
-    expect(geometry.rect.height, 768);
     expect(geometry.rect.top, 24);
+    expect(geometry.rect.bottom, 792);
     expect(geometry.borderRadius.topLeft, const Radius.circular(38));
     expect(geometry.borderRadius.bottomLeft, const Radius.circular(30));
   });
