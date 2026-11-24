@@ -51,8 +51,11 @@ class TraySurface extends StatefulWidget {
 
 /// Space the tray reserves around page content.
 abstract final class _TrayChrome {
+  static const double handleInset = 8;
+  static const double handleHeight = 28;
+
   /// The handle area above the page.
-  static const double top = 36;
+  static const double top = handleInset + handleHeight;
   static const double bottom = 24;
   static const double horizontal = 24;
 
@@ -73,7 +76,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
   // not run again for those.
   final Map<TrayPage<dynamic>, Widget> _pageWidgets = {};
   final Map<TrayPage<dynamic>, Widget?> _footers = {};
-  bool _hasInitialMeasurement = false;
   double _dragTranslation = 0;
   bool _isDragging = false;
   bool _contentDragActive = false;
@@ -126,11 +128,8 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     if (_restorationRegistered && !_applyingRestoration) {
       _restorableSnapshot.value = widget.controller.restorationSnapshot;
     }
-    final retainedPages = widget.controller.pages.toSet();
+    final retainedPages = widget.controller.displayedPages.toSet();
     final transition = widget.controller.transition;
-    if (transition != null) {
-      retainedPages.add(transition.outgoing);
-    }
     _contentSizes.removeWhere((page, _) => !retainedPages.contains(page));
     _pageWidgets.removeWhere((page, _) => !retainedPages.contains(page));
     _footers.removeWhere((page, _) => !retainedPages.contains(page));
@@ -187,22 +186,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
     }
     final coordinator = _visualMotionKey.currentState;
     coordinator?.pageLaidOut(page);
-    final previousSize = _contentSizes[page];
     _contentSizes[page] = size;
     _lastMeasuredSize = size;
-    final isFirstMeasurement = !_hasInitialMeasurement;
-    _hasInitialMeasurement = true;
-    // A bounded page's height comes from the viewport, and build already
-    // derives the geometry from it. Only its width changes the tray.
-    final changesGeometry = page.layout == TrayPageLayout.bounded
-        ? previousSize?.width != size.width
-        : previousSize != size;
-    if (isFirstMeasurement || changesGeometry) {
-      coordinator?.reportMeasuredGeometry(
-        geometry,
-        firstMeasurement: isFirstMeasurement,
-      );
-    }
+    coordinator?.reportMeasuredGeometry(geometry);
   }
 
   void _startDrag(DragStartDetails details) {
@@ -419,14 +405,20 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
             final chromeHeight = _TrayChrome.height(hasFooter: footer != null);
             // The tallest content the tray can hold. A bounded page always
             // takes it, and an auto page scrolls past it.
-            final maxContentHeight = math.max(
-              0.0,
-              widget.geometryResolver
-                      .resolve(layoutContext, const Size(0, double.infinity))
-                      .rect
-                      .height -
-                  chromeHeight,
-            );
+            // A resolver that does not cap the height must not make the tray
+            // taller than the viewport.
+            final maxContentHeight =
+                (widget.geometryResolver
+                            .resolve(
+                              layoutContext,
+                              const Size(0, double.infinity),
+                            )
+                            .rect
+                            .height
+                            .clamp(0.0, layoutContext.size.height) -
+                        chromeHeight)
+                    .clamp(0.0, double.infinity)
+                    .toDouble();
             TrayGeometry geometryFor(TrayPage<dynamic> page, Size size) =>
                 widget.geometryResolver.resolve(
                   layoutContext,
@@ -449,12 +441,7 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
               geometry.rect.height - chromeHeight,
             );
             final transition = widget.controller.transition;
-            final pages = [
-              ...widget.controller.pages,
-              if (transition != null &&
-                  !widget.controller.pages.contains(transition.outgoing))
-                transition.outgoing,
-            ];
+            final pages = widget.controller.displayedPages;
             final pageWidgets = [
               for (final page in pages) _pageWidgetFor(context, page),
             ];
@@ -476,7 +463,6 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                 viewportHeight: layoutContext.size.height,
                 keyboardInset: math.max(0.0, viewInsets.bottom),
                 closing: widget.controller.lifecycle == TrayLifecycle.closing,
-                onTransitionSettled: widget.controller.completePageTransition,
                 contentBuilder: (context, visualState) => Positioned.fill(
                   top: _TrayChrome.top,
                   bottom: chromeHeight - _TrayChrome.top,
@@ -628,10 +614,10 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                               child: footer,
                             ),
                           Positioned(
-                            top: 8,
+                            top: _TrayChrome.handleInset,
                             left: 0,
                             right: 0,
-                            height: 28,
+                            height: _TrayChrome.handleHeight,
                             // The drag is the only way to close from the
                             // handle, so assistive tech gets a dismiss action.
                             child: Semantics(
@@ -648,7 +634,9 @@ class _TraySurfaceState extends State<TraySurface> with RestorationMixin {
                                 child: const Align(
                                   alignment: Alignment.topCenter,
                                   child: Padding(
-                                    padding: EdgeInsets.only(top: 8),
+                                    padding: EdgeInsets.only(
+                                      top: _TrayChrome.handleInset,
+                                    ),
                                     child: TrayHandle(),
                                   ),
                                 ),

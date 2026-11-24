@@ -12,7 +12,6 @@ class _TrayMotionCoordinator extends StatefulWidget {
     required this.viewportHeight,
     required this.keyboardInset,
     required this.closing,
-    required this.onTransitionSettled,
     required this.contentBuilder,
     required this.builder,
   });
@@ -29,7 +28,6 @@ class _TrayMotionCoordinator extends StatefulWidget {
 
   final double keyboardInset;
   final bool closing;
-  final ValueChanged<int> onTransitionSettled;
   final Widget Function(BuildContext, _TrayVisualState) contentBuilder;
   final Widget Function(BuildContext, _TrayVisualState, Widget) builder;
 
@@ -162,12 +160,12 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   }
 
   /// Runs during layout when the current page reports a new size.
-  void reportMeasuredGeometry(
-    TrayGeometry geometry, {
-    required bool firstMeasurement,
-  }) {
+  ///
+  /// Starting a motion here is safe: Motor starts at the current value and
+  /// does not notify listeners until its first tick.
+  void reportMeasuredGeometry(TrayGeometry geometry) {
     if (!mounted || widget.closing) return;
-    if (firstMeasurement || _pendingFirstGeometry != null) {
+    if (!_receivedFirstMeasurement || _pendingFirstGeometry != null) {
       // The tray is still out of view, so the first size snaps. Setting the
       // value notifies listeners, which must not happen during layout.
       final scheduled = _pendingFirstGeometry != null;
@@ -237,10 +235,7 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
 
   void _syncPageMotions() {
     final transition = widget.transition;
-    final retainedPages = <TrayPage<dynamic>>{
-      ...widget.pages,
-      ?transition?.outgoing,
-    };
+    final retainedPages = widget.pages.toSet();
     var keysChanged = false;
     for (final page in retainedPages) {
       if (_pageMotions.containsKey(page)) continue;
@@ -307,7 +302,7 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
     // Status listeners and layout callbacks run mid-frame; the controller
     // notifies its listeners, so it waits for the frame to end.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) widget.onTransitionSettled(transitionId);
+      if (mounted) widget.controller.completePageTransition(transitionId);
     });
   }
 
@@ -341,7 +336,8 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   void settleDrag(double velocityY) {
     if (_dragMotion.value > _dismissDistance || velocityY > _dismissVelocity) {
       widget.controller.dismiss();
-      return;
+      // The controller refuses a dismiss while another route covers the tray.
+      if (widget.controller.lifecycle == TrayLifecycle.closing) return;
     }
     _dragMotion.motion = _motion.interactive;
     _dragMotion.animateTo(0, withVelocity: velocityY);

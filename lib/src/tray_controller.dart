@@ -54,6 +54,17 @@ class TrayController extends ChangeNotifier {
     _visitedPages,
   );
 
+  /// The pages the tray shows: the visited pages, plus the page leaving
+  /// during a transition when it already left the stack.
+  @internal
+  List<TrayPage<dynamic>> get displayedPages {
+    final outgoing = _transition?.outgoing;
+    return [
+      ..._visitedPages,
+      if (outgoing != null && !_visitedPages.contains(outgoing)) outgoing,
+    ];
+  }
+
   Future<T?> push<T>(TrayPage<T> page) {
     _validatePage(page);
     if (identical(currentPage, page)) {
