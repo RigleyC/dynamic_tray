@@ -217,7 +217,7 @@ class TrayRoute<T> extends PopupRoute<T> {
     if (trayController.canPop) {
       trayController.goBack();
     } else {
-      trayController.dismiss(result);
+      trayController.close(result);
     }
     return false;
   }

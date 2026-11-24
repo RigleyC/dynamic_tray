@@ -158,7 +158,7 @@ void main() {
       findsOneWidget,
     );
 
-    _sharedController!.dismiss('done');
+    _sharedController!.close('done');
     await tester.pumpAndSettle();
     expect(await openedTray, 'done');
   });
@@ -193,7 +193,7 @@ class _SharedRootPageState extends State<_SharedRootPage> {
           )
           .then((_) {
             if (mounted && widget.dismissAfterPop) {
-              context.tray.dismiss('done');
+              context.tray.close('done');
             }
           });
     });

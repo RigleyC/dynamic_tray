@@ -189,16 +189,13 @@ class TrayController extends ChangeNotifier {
     }
   }
 
-  /// Closes this tray session and completes the future returned by openTray.
-  void close<T>([T? result]) => dismiss<T>(result);
-
   bool pop<T>([T? result]) {
     if (_transition != null) {
       _pendingNavigation.add((run: () => pop<T>(result), cancel: () {}));
       return true;
     }
     if (!canPop) {
-      dismiss(result);
+      close(result);
       return true;
     }
 
@@ -342,17 +339,23 @@ class TrayController extends ChangeNotifier {
     complete?.call();
   }
 
-  void dismiss<T>([T? result]) {
+  /// Closes this tray session and completes the future returned by openTray
+  /// with [result].
+  ///
+  /// Returns false when the tray cannot close now: it is already closing, or
+  /// another route covers it.
+  bool close<T>([T? result]) {
     if (_lifecycle == TrayLifecycle.closing ||
         _lifecycle == TrayLifecycle.closed) {
-      return;
+      return false;
     }
     final route = _route;
     if (route != null && !route.isCurrent) {
-      return;
+      return false;
     }
     _dismissResult = result;
     _setLifecycle(TrayLifecycle.closing);
+    return true;
   }
 
   @internal

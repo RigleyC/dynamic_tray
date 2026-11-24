@@ -12,8 +12,10 @@ class _TrayMotionCoordinator extends StatefulWidget {
     required this.viewportHeight,
     required this.keyboardInset,
     required this.closing,
+    required this.barrierColor,
+    required this.barrierBuilder,
     required this.contentBuilder,
-    required this.builder,
+    required this.surfaceBuilder,
   });
 
   final TrayController controller;
@@ -28,23 +30,45 @@ class _TrayMotionCoordinator extends StatefulWidget {
 
   final double keyboardInset;
   final bool closing;
-  final Widget Function(BuildContext, _TrayVisualState) contentBuilder;
-  final Widget Function(BuildContext, _TrayVisualState, Widget) builder;
+  final Color barrierColor;
+
+  /// Wraps the backdrop, whose color follows the tray's position.
+  final Widget Function(BuildContext, Widget backdrop) barrierBuilder;
+
+  /// Builds the content once per coordinator build. Its parts listen to the
+  /// motions they use, so a frame of motion does not rebuild it.
+  final Widget Function(BuildContext, _TrayMotions) contentBuilder;
+
+  /// Builds the surface around [content]. It runs once per coordinator build;
+  /// the coordinator moves it on every frame without rebuilding it.
+  final Widget Function(
+    BuildContext,
+    Animation<TrayGeometry> geometry,
+    Widget content,
+  )
+  surfaceBuilder;
 
   @override
   State<_TrayMotionCoordinator> createState() => _TrayMotionCoordinatorState();
 }
 
+/// The motions page content listens to.
+abstract interface class _TrayMotions {
+  /// The page's fade progress, from 0 when hidden to 1 when shown.
+  Animation<double> progressOf(TrayPage<dynamic> page);
+
+  Animation<TrayGeometry> get geometry;
+}
+
 class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin
+    implements _TrayMotions {
   late final MotionController<TrayGeometry> _geometryMotion;
   late final SingleMotionController _presentationMotion;
   late final SingleMotionController _dragMotion;
   final Map<TrayPage<dynamic>, SingleMotionController> _pageMotions = {};
   final Map<TrayPage<dynamic>, double> _pageTargets = {};
-  // Merged once per change of _pageMotions, so the AnimatedBuilder keeps one
-  // listenable across frames.
-  late Listenable _allMotions;
+  late final Listenable _surfaceMotion;
 
   // A page change starts once its incoming page is laid out, and settles once
   // the page motions end.
@@ -52,7 +76,9 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   int? _settledTransitionId;
   bool _dismissCompleted = false;
 
-  double _dragOrigin = 0;
+  bool _dragging = false;
+  // Downward speed of the drag that closed the tray, in pixels per second.
+  double _releaseVelocity = 0;
   bool _receivedFirstMeasurement = false;
   TrayGeometry? _pendingFirstGeometry;
   // Last geometry the motion was sent to. Repeated reports of the same target
@@ -80,6 +106,11 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       motion: _motion.interactive,
       vsync: this,
     );
+    _surfaceMotion = Listenable.merge([
+      _geometryMotion,
+      _presentationMotion,
+      _dragMotion,
+    ]);
     widget.controller.backGesture.addListener(_handleBackGesture);
     _syncPageMotions();
     // The surface is still out of view while its first layout is measured.
@@ -98,11 +129,17 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       widget.controller.backGesture.addListener(_handleBackGesture);
     }
     if (!oldWidget.closing && widget.closing) {
+      _dragging = false;
       if (_presentationMotion.value <= 0.001) {
         _completeDismissAfterFrame();
       } else {
+        // A fling that closes the tray keeps its speed.
+        final travel = _travel;
         _presentationMotion.motion = _motion.close;
-        _presentationMotion.animateTo(0);
+        _presentationMotion.animateTo(
+          0,
+          withVelocity: travel <= 0 ? 0 : -_releaseVelocity / travel,
+        );
       }
       return;
     }
@@ -135,6 +172,13 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       _syncPageMotions();
     }
   }
+
+  @override
+  Animation<double> progressOf(TrayPage<dynamic> page) =>
+      _pageMotions[page] ?? kAlwaysDismissedAnimation;
+
+  @override
+  Animation<TrayGeometry> get geometry => _geometryMotion;
 
   @override
   void dispose() {
@@ -236,10 +280,8 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
   void _syncPageMotions() {
     final transition = widget.transition;
     final retainedPages = widget.pages.toSet();
-    var keysChanged = false;
     for (final page in retainedPages) {
       if (_pageMotions.containsKey(page)) continue;
-      keysChanged = true;
       _pageTargets[page] = 0;
       _pageMotions[page] = SingleMotionController(
         motion: _motion.effects,
@@ -254,18 +296,9 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
     }
     for (final page in _pageMotions.keys.toList()) {
       if (!retainedPages.contains(page)) {
-        keysChanged = true;
         _pageTargets.remove(page);
         _pageMotions.remove(page)?.dispose();
       }
-    }
-    if (keysChanged) {
-      _allMotions = Listenable.merge([
-        _geometryMotion,
-        _presentationMotion,
-        _dragMotion,
-        ..._pageMotions.values,
-      ]);
     }
     if (transition != null && _startedTransitionId != transition.id) {
       return;
@@ -306,18 +339,62 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
     });
   }
 
-  void beginDrag() {
-    _dragOrigin = _dragMotion.value;
-    _dragMotion.stop(canceled: true);
+  // Bottom sheet rules: a release past half the tray's height, or a downward
+  // fling faster than this, closes the tray.
+  static const _closeVelocity = 700.0;
+
+  /// Distance from the resting position to just out of view.
+  double get _travel => switch (_motion.travel) {
+    FixedTrayTravel(:final distance) => distance,
+    // Clears the viewport and no more, so no frame of the spring is spent
+    // below the visible area.
+    MeasuredTrayTravel(:final hiddenGap) => math.max(
+      0.0,
+      widget.viewportHeight +
+          hiddenGap -
+          _geometryMotion.value.rect.top +
+          widget.keyboardInset,
+    ),
+  };
+
+  bool get isDragging => _dragging;
+
+  /// How far below its resting position the tray is.
+  double get dragOffset => _dragMotion.value;
+
+  /// Moves the tray down by [delta] (up when negative), never above its
+  /// resting position, and returns the part of [delta] it used.
+  double dragBy(double delta) {
+    if (widget.closing) return 0;
+    if (!_dragging) {
+      _dragging = true;
+      _dragMotion.stop(canceled: true);
+    }
+    final before = _dragMotion.value;
+    final after = math.max(0.0, before + delta);
+    if (after != before) _dragMotion.value = after;
+    return after - before;
   }
 
-  void dragTo(double translationY) {
-    _dragMotion.value = math.max(0.0, _dragOrigin + translationY);
+  /// Ends a drag released at [velocity] (pixels per second, positive down).
+  void endDrag(double velocity) {
+    if (!_dragging) return;
+    _dragging = false;
+    final height = _geometryMotion.value.rect.height;
+    if (velocity > _closeVelocity || _dragMotion.value > height / 2) {
+      // The close keeps the release speed. close returns false while another
+      // route covers the tray, and then the tray springs back.
+      _releaseVelocity = math.max(0.0, velocity);
+      if (widget.controller.close()) return;
+      _releaseVelocity = 0;
+    }
+    _dragMotion.motion = _motion.interactive;
+    _dragMotion.animateTo(0, withVelocity: velocity);
   }
 
-  // The back gesture moves the tray with the same offset as a handle drag.
-  // Commit closes or pops it; cancel springs it back. A commit that closes the
-  // tray keeps the offset, so the close continues from where the gesture left.
+  // The back gesture moves the tray with the same offset as a drag. Commit
+  // closes or pops it; cancel springs it back. A commit that closes the tray
+  // keeps the offset, so the close continues from where the gesture left.
   void _handleBackGesture() {
     final progress = widget.controller.backGesture.value;
     if (progress != null) {
@@ -326,89 +403,64 @@ class _TrayMotionCoordinatorState extends State<_TrayMotionCoordinator>
       return;
     }
     if (widget.controller.lifecycle == TrayLifecycle.closing) return;
-    cancelDrag();
-  }
-
-  // The Expo Dynamic Tray thresholds.
-  static const _dismissDistance = 110.0;
-  static const _dismissVelocity = 1000.0;
-
-  void settleDrag(double velocityY) {
-    if (_dragMotion.value > _dismissDistance || velocityY > _dismissVelocity) {
-      widget.controller.dismiss();
-      // The controller refuses a dismiss while another route covers the tray.
-      if (widget.controller.lifecycle == TrayLifecycle.closing) return;
-    }
-    _dragMotion.motion = _motion.interactive;
-    _dragMotion.animateTo(0, withVelocity: velocityY);
-  }
-
-  void cancelDrag() {
     _dragMotion.motion = _motion.interactive;
     _dragMotion.animateTo(0);
   }
 
+  /// How far the tray is from out of view, from 0 hidden to 1 at rest.
+  double get _shownFraction {
+    final travel = _travel;
+    final hidden = travel * (1 - _presentationMotion.value) + _dragMotion.value;
+    return travel <= 0 ? 1 : (1 - hidden / travel).clamp(0.0, 1.0);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _allMotions,
-      builder: (context, _) {
-        final geometry = _geometryMotion.value;
-        final presentation = _presentationMotion.value.clamp(0.0, 1.0);
-        final travel = switch (_motion.travel) {
-          FixedTrayTravel(:final distance) => distance,
-          // Clears the viewport and no more, so no frame of the spring is
-          // spent below the visible area.
-          MeasuredTrayTravel(:final hiddenGap) => math.max(
-            0.0,
-            widget.viewportHeight +
-                hiddenGap -
-                geometry.rect.top +
-                widget.keyboardInset,
+    final surface = widget.surfaceBuilder(
+      context,
+      _geometryMotion,
+      widget.contentBuilder(context, this),
+    );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned.fill(
+          child: widget.barrierBuilder(
+            context,
+            // The position goes into the backdrop alpha. An Opacity here
+            // would composite a full-screen layer on every frame.
+            AnimatedBuilder(
+              animation: _surfaceMotion,
+              builder: (context, _) => ColoredBox(
+                color: widget.barrierColor.withValues(
+                  alpha: widget.barrierColor.a * _shownFraction,
+                ),
+              ),
+            ),
           ),
-        };
-        final dragFade = _motion.dragFadeDistance <= 0
-            ? 0.0
-            : (_dragMotion.value / _motion.dragFadeDistance).clamp(0.0, 1.0);
-        final visualState = _TrayVisualState(
-          geometry: geometry,
-          surfaceOffset: Offset(
-            0,
-            travel * (1 - presentation) +
-                _dragMotion.value -
-                widget.keyboardInset,
-          ),
-          backdropOpacity: (presentation * (1 - 0.6 * dragFade)).clamp(
-            0.0,
-            1.0,
-          ),
-          pageProgresses: {
-            for (final MapEntry(key: page, value: motion)
-                in _pageMotions.entries)
-              page: motion.value,
+        ),
+        AnimatedBuilder(
+          animation: _surfaceMotion,
+          child: surface,
+          builder: (context, surface) {
+            final presentation = _presentationMotion.value.clamp(0.0, 1.0);
+            return Positioned.fromRect(
+              rect: _geometryMotion.value.rect,
+              // Travel, drag and keyboard offsets go through a transform, so
+              // they never relayout the tray.
+              child: Transform.translate(
+                offset: Offset(
+                  0,
+                  _travel * (1 - presentation) +
+                      _dragMotion.value -
+                      widget.keyboardInset,
+                ),
+                child: surface,
+              ),
+            );
           },
-        );
-        final content = widget.contentBuilder(context, visualState);
-        return widget.builder(context, visualState, content);
-      },
+        ),
+      ],
     );
   }
-}
-
-class _TrayVisualState {
-  const _TrayVisualState({
-    required this.geometry,
-    required this.surfaceOffset,
-    required this.backdropOpacity,
-    required this.pageProgresses,
-  });
-
-  /// Resting bounds and corners of the surface.
-  final TrayGeometry geometry;
-
-  /// Per-frame translation applied on top of [geometry].
-  final Offset surfaceOffset;
-
-  final double backdropOpacity;
-  final Map<TrayPage<dynamic>, double> pageProgresses;
 }

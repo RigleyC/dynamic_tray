@@ -37,7 +37,7 @@ controller or `null`, instead of the asserting `context.tray`.
 
 `goBack` returns to the previous view within the same tray. `pop` returns to the
 page below and, at the root page, dismisses the tray with that result. `close`
-and `dismiss` always close the whole session, so a page that returns a result
+always closes the whole session, so a page that returns a result
 must use `pop`: calling `close` would also close the tray it was opened into.
 Android system back pops the current page and, at the root, dismisses the tray.
 Give repeatedly reachable views a stable `viewId` so tapping the same
@@ -104,10 +104,13 @@ and does not rebuild its readers when the tray changes.
 - System back returns to the previous page, and closes the tray at the root.
   Navigation requested during a page transition runs once it settles, and a
   popped page's result is delivered after the transition, like `Navigator`.
-- Dragging is attached to the handle. It dismisses the tray past 110 px or
-  above 1000 px/s; otherwise it settles back with the gesture velocity. The
-  backdrop fades over its own `dragFadeDistance`, not over the travel distance,
-  so it stays readable for short sheets.
+- The whole tray drags, like a bottom sheet. A release past half the tray's
+  height, or a downward fling above 700 px/s, closes it and the close keeps
+  the release speed; otherwise it springs back with that speed. The backdrop
+  follows the tray's position. A scroll view inside the tray keeps its own
+  drags: pulling down at its top moves the tray, and pushing up moves the tray
+  back before the content scrolls. Content that fits does not scroll, so it
+  drags the tray.
 - `context.tray.setView` and `goBack` transition pages without pushing another
   route. The previous view remains available in the stack during the transition.
 - One visual state keeps bounds, radius, scale, backdrop, keyboard/drag offset,
@@ -118,7 +121,10 @@ and does not rebuild its readers when the tray changes.
   Per-frame travel, drag, and keyboard offsets are applied as a transform, so
   the stack lays out the tray at its resting bounds and never relayouts while it
   animates. The backdrop folds its progress into the barrier alpha instead of
-  compositing a full-screen layer. Each page sits behind its own
+  compositing a full-screen layer. Each part of the tray listens only to the
+  motion it uses (position and backdrop, corners, each page's fade), so a frame
+  of motion rebuilds a few widgets instead of the whole tray. Each page sits
+  behind its own
   `RepaintBoundary`, so moving the tray, changing its height, or fading and
   scaling a page during a page change does not repaint page content.
 - A page change starts in the same frame its incoming page is first laid out.

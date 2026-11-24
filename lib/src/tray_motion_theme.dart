@@ -58,7 +58,6 @@ class TrayMotionTheme {
       SpringDescription(mass: 1, stiffness: 260, damping: 24),
     ),
     this.travel = const TrayTravel.measured(),
-    this.dragFadeDistance = 240.0,
     this.pageScale = 0.90,
   });
 
@@ -96,13 +95,6 @@ class TrayMotionTheme {
 
   /// How far the tray travels when entering and leaving.
   final TrayTravel travel;
-
-  /// Drag distance over which the backdrop fades out.
-  ///
-  /// The backdrop is the only feedback during a drag, so it needs its own
-  /// scale instead of borrowing the travel distance, which changes with the
-  /// tray's height.
-  final double dragFadeDistance;
 
   /// Scale that page content moves between during a page change.
   ///

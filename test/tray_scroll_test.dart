@@ -41,7 +41,7 @@ void main() {
 
     expect(scrollState.position.pixels, greaterThan(0));
 
-    _scrollController!.dismiss('done');
+    _scrollController!.close('done');
     await tester.pumpAndSettle();
     expect(await openedTray, 'done');
   });

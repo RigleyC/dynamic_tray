@@ -154,7 +154,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Child'), findsOneWidget);
 
-    _reopenController!.dismiss('done');
+    _reopenController!.close('done');
     await tester.pumpAndSettle();
     expect(await openedTray, 'done');
   });
@@ -231,7 +231,7 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
 
-    _reopenController!.dismiss('done');
+    _reopenController!.close('done');
     await tester.pump(const Duration(milliseconds: 16));
     expect(find.text('Root'), findsOneWidget);
 
@@ -403,7 +403,7 @@ class _MeasurementRootPageState extends State<_MeasurementRootPage> {
           .push<void>(TrayPage(builder: (_) => const _MeasurementChildPage()))
           .then((_) {
             if (mounted) {
-              context.tray.dismiss('done');
+              context.tray.close('done');
             }
           });
     });
@@ -522,7 +522,7 @@ class _StatefulRootPageState extends State<_StatefulRootPage> {
           .push<void>(TrayPage(builder: (_) => const _AutoPopPage()))
           .then((_) {
             if (mounted) {
-              context.tray.dismiss('done');
+              context.tray.close('done');
             }
           });
     });
